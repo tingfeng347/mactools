@@ -136,7 +136,7 @@ def clean(args):
         reload_argv += ['--' + scope for scope in selected_scopes(args)]
         reload_command = shlex.join(reload_argv)
         choices = '\n'.join(name for name, _ in matches) + '\n'
-        result = run(['fzf', '--multi', '--header', text('Tab 多选 | Enter 预览并确认', 'Tab: multi-select | Enter: review and confirm'), '--preview', preview, '--bind', 'ctrl-r:reload(' + reload_command + '),ctrl-e:toggle-exact', *(['--exact'] if args.exact else [])], input=choices, text=True, stdout=subprocess.PIPE, env=brew_env(), timeout=86400)
+        result = run(['fzf', '--multi', '--header', text('Tab 多选 | Enter 预览并确认', 'Tab: multi-select | Enter: review and confirm'), '--preview', preview, '--bind', 'ctrl-r:reload(' + reload_command + ')', *(['--exact'] if args.exact else [])], input=choices, text=True, stdout=subprocess.PIPE, env=brew_env(), timeout=86400)
         if result.returncode in (1, 130):
             return 0
         if result.returncode:

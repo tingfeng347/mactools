@@ -1,6 +1,7 @@
 import contextlib
 import io
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -62,6 +63,19 @@ class SystemTests(unittest.TestCase):
         self.assertEqual(len(previews), 2)
         self.assertTrue(all('--dry-run' in a for a in previews))
         self.assertFalse(any('--zap' in a or 'sudo' in a for a, _ in self.commands))
+
+    @unittest.skipUnless(shutil.which('fzf'), 'host fzf unavailable')
+    def test_clean_selector_bindings_work_with_real_fzf(self):
+        def run(argv, **kwargs):
+            if argv[0] == 'fzf':
+                # Filter mode parses the real selector options without opening
+                # a terminal or executing the preview/reload commands.
+                return subprocess.run([*argv, '--filter=formula-cache'], **kwargs)
+            return self.fake_run(argv, **kwargs)
+        with patch.object(system, 'brew_path', return_value='/stub/brew'), patch.object(system, 'run', side_effect=run), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(system.main(['clean', '--dry-run']), 0)
+        previews = [argv for argv, _ in self.commands if argv[1] != 'list']
+        self.assertEqual(previews, [['/stub/brew', 'cleanup', '--dry-run', '--', 'homebrew/core/hello']])
 
     def test_cleanup_disambiguates_formula_and_cask_tokens(self):
         with patch.object(system, 'brew_path', return_value='/stub/brew'), patch.object(system, 'run', side_effect=self.fake_run), contextlib.redirect_stdout(io.StringIO()):
