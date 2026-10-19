@@ -209,8 +209,28 @@ class PackageTests(unittest.TestCase):
     def test_preview_uses_bounded_info_for_correct_source(self):
         with contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(packages.preview([str(self.brew), "2", "cask", "firefox"]), 0)
-        self.assertIn("Package metadata", output.getvalue())
-        self.assertEqual(self.calls()[-1]["args"], ["info", "--cask", "firefox"])
+        self.assertIn("Installed", output.getvalue())
+        self.assertIn("120.0", output.getvalue())
+        self.assertEqual(self.calls()[-1]["args"], ["info", "--json=v2", "--cask", "firefox"])
+
+    def test_chinese_selector_has_separate_help_and_aligned_columns(self):
+        with patch.dict(os.environ, {"MACTOOLS_LANG": "zh"}):
+            self.invoke("install", "--dry-run")
+        args = json.loads((self.root / "fzf.log").read_text().splitlines()[0])
+        header = next(arg for arg in args if arg.startswith("--header="))
+        self.assertNotIn("Fuzzy", header)
+        self.assertNotIn("新版本", header)
+        self.assertIn("模糊", header)
+        self.assertGreaterEqual(header.count("\n"), 2)
+        self.assertIn("--with-nth=5..", args)
+        self.assertIn("--preview-window=right:42%:wrap:<50(down:35%:wrap)", args)
+
+    def test_chinese_preview_uses_localized_metadata_labels(self):
+        with patch.dict(os.environ, {"MACTOOLS_LANG": "zh"}), contextlib.redirect_stdout(io.StringIO()) as output:
+            packages.preview([str(self.brew), "2", "formula", "git"])
+        self.assertIn("已安装", output.getvalue())
+        self.assertIn("命令行工具", output.getvalue())
+        self.assertNotIn("Installed", output.getvalue())
 
     def test_malformed_cache_is_ignored_and_refreshed(self):
         queries = packages.Queries(str(self.brew), 2)
@@ -262,15 +282,18 @@ class PackageTests(unittest.TestCase):
 
     @unittest.skipUnless(REAL_FZF, "host fzf unavailable")
     def test_real_fzf_searches_only_package_name_and_exact_toggle(self):
-        rows = "formula\tgit\t1\t2\nformula\tg-i-t\t1\t2\nformula\tother\tgit\tgit\n"
+        rows = "\n".join(row.selector_line("update") for row in (
+            packages.Row("formula", "git", "1", "2"), packages.Row("formula", "g-i-t", "1", "2"),
+            packages.Row("formula", "other", "git", "git"))) + "\n"
         env = dict(os.environ)
         env.pop("FZF_DEFAULT_OPTS", None)
         env.pop("FZF_DEFAULT_OPTS_FILE", None)
-        argv = [REAL_FZF, "--multi", "--delimiter=\t", "--nth=2", "--with-nth=1,2,3,4", "--filter=git"]
+        argv = [REAL_FZF, "--multi", "--delimiter=\t", "--nth=2", "--with-nth=5..", "--tabstop=1", "--filter=git"]
         fuzzy = subprocess.run(argv, input=rows, text=True, capture_output=True, env=env, check=True)
         exact = subprocess.run(argv + ["--exact"], input=rows, text=True, capture_output=True, env=env, check=True)
         self.assertEqual({line.split("\t")[1] for line in fuzzy.stdout.splitlines()}, {"git", "g-i-t"})
         self.assertEqual({line.split("\t")[1] for line in exact.stdout.splitlines()}, {"git"})
+        self.assertEqual(packages.Row.parse(exact.stdout.strip()), packages.Row("formula", "git", "1", "2"))
 
     def test_selection_and_timeout_validation(self):
         for value in ("nan", "inf", "0", "-1"):

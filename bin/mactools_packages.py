@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 
 from mactools_runtime import brew_env, brew_path, cache_dir, command, confirm, save_json, text
 
@@ -30,6 +31,11 @@ class BrewError(Exception):
 
 def clean(value):
     return re.sub(r"[\x00-\x1f\x7f]", " ", str(value))
+
+
+def cell(value, width):
+    used = sum(2 if unicodedata.east_asian_width(char) in ("W", "F") else 1 for char in value)
+    return value + " " * max(0, width - used)
 
 
 def package_name(value):
@@ -48,10 +54,20 @@ class Row:
     def line(self):
         return "\t".join((self.source, self.name, clean(self.current), clean(self.target)))
 
+    def selector_line(self, action):
+        # Keep canonical fields hidden for preview commands and selection validation.
+        source = text("工具", "CLI") if self.source == "formula" else text("应用", "App")
+        current = clean(self.current) if self.current != "-" else text("未安装", "Not installed")
+        columns = [cell(source, 6), cell(self.name, 32), current]
+        if action == "update":
+            columns[-1] = cell(current, 22)
+            columns.append(clean(self.target))
+        return self.line() + "\t" + "\t".join(columns)
+
     @classmethod
     def parse(cls, line):
         parts = line.split("\t")
-        if len(parts) != 4 or parts[0] not in ("formula", "cask"):
+        if len(parts) < 4 or parts[0] not in ("formula", "cask"):
             raise ValueError("Invalid package selection")
         return cls(parts[0], package_name(parts[1]), parts[2], parts[3])
 
@@ -239,12 +255,21 @@ def select(queries, opts):
     query, exact = " ".join(opts.query), opts.exact
     while True:
         preview = shlex.join([sys.executable, str(Path(__file__).resolve()), "--preview", queries.brew, str(opts.timeout)]) + " {1} {2}"
-        argv = [fzf, "--multi", "--delimiter=\t", "--nth=2", "--with-nth=1,2,3,4",
+        title = {"install": text("安装软件", "Install packages"), "remove": text("卸载软件", "Remove packages"), "update": text("更新软件", "Update packages")}[opts.action]
+        mode = text("连续匹配", "Exact") if exact else text("模糊匹配", "Fuzzy")
+        headings = cell(text("类型", "Type"), 6) + " " + cell(text("名称", "Name"), 32) + " "
+        installed_heading = text("已安装版本", "Installed version")
+        headings += cell(installed_heading, 22) if opts.action == "update" else installed_heading
+        if opts.action == "update":
+            headings += " " + text("可更新至", "Available version")
+        header = title + " · " + mode + "\n" + text("Tab 多选  Enter 确认  Ctrl+R 刷新  Ctrl+E 匹配  Ctrl+/ 详情  Esc 退出", "Tab select  Enter confirm  Ctrl+R refresh  Ctrl+E match  Ctrl+/ details  Esc exit") + "\n\n" + headings
+        argv = [fzf, "--multi", "--delimiter=\t", "--nth=2", "--with-nth=5..", "--tabstop=1",
                 "--print-query", "--expect=ctrl-e,ctrl-r", "--query=" + query,
                 "--height=95%", "--layout=reverse", "--border", "--tiebreak=index",
-                "--preview=" + preview, "--preview-window=down:55%:wrap",
-                "--bind=tab:toggle+down,shift-tab:toggle+up,alt-j:last,alt-k:first",
-                "--header=" + text("Tab:多选 | Enter:确认 | Ctrl+R:刷新 | Ctrl+E:精确/模糊 | Esc:退出 | 来源 名称 当前 → 新版本", "Tab:Multi | Enter:Confirm | Ctrl+R:Refresh | Ctrl+E:Exact/Fuzzy | Esc:Exit | Source Name Current → New") + (" | Exact" if exact else " | Fuzzy")]
+                "--preview=" + preview, "--preview-window=right:42%:wrap:<50(down:35%:wrap)",
+                "--prompt=" + text("搜索 › ", "Search › "),
+                "--bind=tab:toggle+down,shift-tab:toggle+up,alt-j:last,alt-k:first,ctrl-/:toggle-preview",
+                "--header=" + header]
         if exact:
             argv.append("--exact")
         env = dict(os.environ)
@@ -259,7 +284,7 @@ def select(queries, opts):
             try:
                 for row in rows(queries, opts):
                     emitted[(row.source, row.name)] = row
-                    process.stdin.write(row.line() + "\n")
+                    process.stdin.write(row.selector_line(opts.action) + "\n")
                     process.stdin.flush()
             except BrokenPipeError:
                 pass
@@ -308,7 +333,7 @@ def select(queries, opts):
         for line in fields[2:]:
             row = Row.parse(line)
             actual = emitted.get((row.source, row.name))
-            if actual is None or actual.line() != line:
+            if actual is None or actual.selector_line(opts.action) != line:
                 raise ValueError("Unknown package selection")
             if actual not in selected:
                 selected.append(actual)
@@ -389,7 +414,25 @@ def preview(argv):
         raise ValueError("Invalid source")
     queries = Queries(brew, float(timeout))
     try:
-        print(queries.capture("info", "--" + source, package_name(name)), end="")
+        data = json.loads(queries.capture("info", "--json=v2", "--" + source, package_name(name)))
+        items = inventory_items(data, "formulae" if source == "formula" else "casks")
+        if not items:
+            raise ValueError(text("未找到软件详情", "Package details unavailable"))
+        item = items[0]
+        kind = text("命令行工具", "Command-line tool") if source == "formula" else text("桌面应用", "Desktop app")
+        print(clean(name) + " · " + kind + "\n")
+        installed = versions(item.get("installed"))
+        latest = (item.get("versions") or {}).get("stable") if source == "formula" else item.get("version")
+        print(text("已安装：", "Installed: ") + (installed if installed != "-" else text("未安装", "Not installed")))
+        if latest:
+            print(text("最新版本：", "Latest version: ") + clean(latest))
+        if item.get("desc"):
+            print("\n" + text("简介（上游原文）", "Description") + "\n" + clean(item["desc"]))
+        for key, label in (("homepage", text("主页", "Homepage")), ("license", text("许可证", "License"))):
+            if item.get(key):
+                print("\n" + label + "\n" + clean(item[key]))
+        if source == "formula" and item.get("dependencies"):
+            print("\n" + text("依赖", "Dependencies") + "\n" + ", ".join(clean(value) for value in item["dependencies"]))
         return 0
     finally:
         queries.close()
