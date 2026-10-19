@@ -5,13 +5,18 @@ import json
 import os
 import re
 import shutil
+import shlex
+import unicodedata
 import subprocess
 import sys
 import tempfile
+import tarfile
 import urllib.parse
 from dataclasses import dataclass
 from contextlib import ExitStack
 from pathlib import Path
+
+from mactools_packages import cell, clean, selector_widths
 
 from mactools_runtime import brew_env, command, confirm, fetch, run, text, within
 
@@ -30,6 +35,26 @@ TOOLS = {
         "package": "opencode-ai",
         "url": "https://opencode.ai/install",
         "shell": "bash",
+    },
+    "qodercn": {
+        "package": "@qodercn-ai/qoderclicn",
+        "url": "https://static.qoder.com.cn/qoder-cli-cn/install.sh",
+        "shell": "bash",
+    },
+    "gemini": {
+        "package": "@google/gemini-cli",
+        "url": "https://github.com/google-gemini/gemini-cli",
+        "install": "npm",
+    },
+    "qwen": {
+        "package": "@qwen-code/qwen-code",
+        "url": "https://github.com/QwenLM/qwen-code",
+        "install": "npm",
+    },
+    "zcode": {
+        "package": "",
+        "url": "https://github.com/zai-org/ZCode.git",
+        "install": "source",
     },
     "pi": {
         "package": "@earendil-works/pi-coding-agent",
@@ -52,10 +77,15 @@ class Installation:
     aliases: tuple = ()
 
 
+def zcode_root():
+    return Path.home() / '.local/share/mactools/zcode'
+
+
 def candidate_paths(name):
     home = Path.home()
-    primary = shutil.which(name)
-    if primary:
+    executable_names = ('qoderclicn', 'qodercn') if name == 'qodercn' else (name,)
+    primary = next((shutil.which(value) for value in executable_names if shutil.which(value)), None)
+    if primary and not (name == 'qodercn' and Path(primary).resolve() == home / '.qoder-cn/entry/qodercn'):
         yield primary
     directories = [Path(value or '.') for value in os.environ.get('PATH', '').split(os.pathsep)]
     directories += [home / '.local/bin', home / '.opencode/bin',
@@ -77,10 +107,16 @@ def candidate_paths(name):
     directories += sorted(nvm.glob('versions/node/*/bin'))
     if name == 'pi':
         directories.append(Path(os.environ.get('PI_CODING_AGENT_DIR', str(home / '.pi/agent'))) / 'bin')
+    if name == 'qodercn':
+        directories.append(home / '.qoder-cn/bin/qoderclicn')
     for directory in directories:
-        launcher = directory / name
-        if launcher.is_file() and os.access(launcher, os.X_OK):
-            yield str(launcher.absolute())
+        for executable in executable_names:
+            launcher = directory / executable
+            # This dispatcher also opens the IDE; manage its underlying CLI only.
+            if name == 'qodercn' and launcher.resolve() == home / '.qoder-cn/entry/qodercn':
+                continue
+            if launcher.is_file() and os.access(launcher, os.X_OK):
+                yield str(launcher.absolute())
 
 
 def detect_all(name):
@@ -114,6 +150,10 @@ def classify(name, found):
     pi_root = Path(os.environ.get('PI_CODING_AGENT_DIR', str(home / '.pi/agent'))).expanduser().resolve()
     path = Path(found).resolve()
     value = str(path)
+    if name == 'zcode' and path == zcode_root() / 'launcher':
+        return Installation(found, 'source')
+    if name == 'qodercn' and within(path, home / '.qoder-cn/bin/qoderclicn'):
+        return Installation(found, 'native')
     # Homebrew formulas can contain node_modules. Attribute the enclosing keg
     # first, and retain its prefix rather than using whichever brew is on PATH.
     for marker, method in [('Cellar', 'brew'), ('Caskroom', 'brew-cask')]:
@@ -132,7 +172,7 @@ def classify(name, found):
         within(path, pi_root / "bin") or within(path, pi_root / "install")
     ):
         return Installation(found, "native")
-    if "/node_modules/" in value:
+    if "/node_modules/" in value and TOOLS[name]["package"]:
         bun_global = os.environ.get('BUN_INSTALL_GLOBAL_DIR')
         is_bun = '/install/global/node_modules/' in value or (bun_global and within(path, Path(bun_global).expanduser().resolve()))
         method = "pnpm" if "/.pnpm/" in value else "bun" if is_bun else "npm"
@@ -164,7 +204,7 @@ def classify(name, found):
         Path(os.environ.get("CODEX_HOME", str(home / ".codex")))
         / "packages/standalone",
     ]
-    if path in native_paths or any(within(path, root.expanduser().resolve()) for root in native_roots):
+    if name in {'codex', 'claude', 'opencode', 'pi'} and (path in native_paths or any(within(path, root.expanduser().resolve()) for root in native_roots)):
         return Installation(found, "native")
     return Installation(found, "unmanaged")
 
@@ -185,9 +225,12 @@ def version(installation):
 
 def latest(name, timeout):
     package = urllib.parse.quote(TOOLS[name]["package"], safe="@")
-    data = json.loads(
-        fetch(f"https://registry.npmjs.org/{package}/latest", timeout=timeout)
-    )
+    if name == 'zcode':
+        data = json.loads(fetch('https://raw.githubusercontent.com/zai-org/ZCode/main/package.json', timeout=timeout))
+    else:
+        data = json.loads(
+            fetch(f"https://registry.npmjs.org/{package}/latest", timeout=timeout)
+        )
     value = data.get("version", "") if isinstance(data, dict) else None
     if not isinstance(value, str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?", value):
         raise ValueError("invalid published version metadata")
@@ -228,6 +271,18 @@ def plan(name, existing, action, yes=False):
     method = existing.method
     package = existing.package
     if action == "uninstall":
+        if name == 'zcode' and method == 'source':
+            if Path(existing.path).resolve() != zcode_root() / 'launcher':
+                raise ValueError('Unrecognized ZCode source installation')
+            return [['@remove', existing.path], ['@remove-tree', str(zcode_root())]]
+        if name == 'qodercn' and method == 'native':
+            launcher = Path(existing.path)
+            runtime = Path.home() / '.qoder-cn/bin/qoderclicn'
+            if not within(launcher.resolve(), runtime) or launcher.name not in {'qoderclicn', 'qodercn'}:
+                raise ValueError('Unrecognized Qoder CN native installation')
+            steps = [['@remove', str(launcher)]]
+            steps.append(['@remove-tree', str(runtime)])
+            return steps
         if method in {"npm", "pnpm", "bun"}:
             verb = "uninstall" if method == "npm" else "remove"
             return [manager_command(existing, [verb, "--global", package])]
@@ -333,6 +388,12 @@ def plan(name, existing, action, yes=False):
         raise ValueError(
             f"{name}: {text('无法确定安装来源，请使用原安装工具更新', 'unrecognized installation; update with its original manager')}: {existing.path}"
         )
+    if name == 'zcode' and method in {'missing', 'source'}:
+        return [['@zcode-source', TOOLS[name]['url']]]
+    if method == 'missing' and TOOLS[name].get('install') == 'npm':
+        return [['npm', 'install', '--global', TOOLS[name]['package'] + '@latest']]
+    if name == 'qodercn' and method == 'native' and action == 'update':
+        return [[existing.path, 'update']]
     if method == "native" and action == "update" and name == "pi":
         return [[existing.path, "update"]]
     if method == "native" and action == "update" and name != "codex":
@@ -341,6 +402,9 @@ def plan(name, existing, action, yes=False):
             if name == "claude"
             else [[existing.path, "upgrade", "--method", "curl"]]
         )
+    if name == 'zcode':
+        raise ValueError(text('ZCode 安装来源未知，请使用原安装方式管理。',
+                              'Unknown ZCode installation; use its original installer.'))
     # The @installer marker is rendered as a download + a separate execution,
     # with no shell interpolation of remote contents or user-supplied arguments.
     return [
@@ -355,7 +419,13 @@ def plan(name, existing, action, yes=False):
 
 def display_plan(steps):
     for step in steps:
-        if step[0] in {"@installer", "@pi-uninstaller"}:
+        if step[0] == '@zcode-source':
+            print(text('从智谱官方源码构建 ZCode CLI（需要 Git、Node.js 24.14+、pnpm 10.33.2；构建可能耗时较长）。',
+                       'Build official ZCode CLI from source (Git, Node.js 24.14+, pnpm 10.33.2 required; this may take some time).'))
+            command(['git', 'clone', '--depth=1', step[1], '<temporary-source>'])
+            command(['pnpm', 'install', '--frozen-lockfile'])
+            command(['pnpm', 'build:zcode', '--base-url', 'https://github.com/zai-org/ZCode/'])
+        elif step[0] in {"@installer", "@pi-uninstaller"}:
             command(["curl", "-fL", step[1], "-o", "<installer-file>"])
             command([step[2], "<installer-file>", *step[3:]])
             if step[0] == "@pi-uninstaller":
@@ -372,8 +442,79 @@ def display_plan(steps):
             command(step)
 
 
+def build_zcode():
+    """Build in isolation, then publish only the runtime into our owned directory."""
+    for executable in ('git', 'node', 'pnpm', 'tar'):
+        if not shutil.which(executable):
+            raise ValueError(f'ZCode source build requires {executable}')
+    node = run(['node', '--version'], capture_output=True, text=True)
+    match = re.search(r'(\d+)\.(\d+)\.(\d+)', node.stdout)
+    if node.returncode or not match or tuple(map(int, match.groups())) < (24, 14, 0):
+        raise ValueError('ZCode source build requires Node.js 24.14.0 or newer')
+    launcher = Path.home() / '.local/bin/zcode'
+    root = zcode_root()
+    if (launcher.exists() or launcher.is_symlink()) and launcher.resolve() != root / 'launcher':
+        raise ValueError(f'Refusing to overwrite an existing ZCode launcher: {launcher}')
+    with tempfile.TemporaryDirectory(prefix='ma-zcode-build-') as directory:
+        source = Path(directory) / 'source'
+        commands = [
+            (['git', 'clone', '--depth=1', TOOLS['zcode']['url'], str(source)], None),
+            (['pnpm', 'install', '--frozen-lockfile'], source),
+            (['pnpm', 'build:zcode', '--base-url', 'https://github.com/zai-org/ZCode/'], source),
+        ]
+        for arguments, cwd in commands:
+            if arguments[:2] == ['pnpm', 'install']:
+                expected = json.loads((source / 'package.json').read_text()).get('packageManager', '')
+                actual = run(['pnpm', '--version'], capture_output=True, text=True)
+                if actual.returncode or expected != 'pnpm@' + actual.stdout.strip():
+                    raise ValueError(f'ZCode requires {expected}; activate it before building')
+            result = run(arguments, cwd=cwd, timeout=3600)
+            if result.returncode:
+                raise RuntimeError('ZCode source build failed; existing runtime kept')
+        metadata = json.loads((source / 'dist/zcode/latest.json').read_text())
+        version_name, tarball = metadata['version'], metadata['tarball']
+        if not re.fullmatch(r'\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?', version_name) or Path(tarball).name != tarball:
+            raise ValueError('Invalid ZCode build metadata')
+        archive = source / 'dist/zcode/releases' / version_name / tarball
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='runtime-', dir=root) as stage:
+            # Validate archive paths and links before extracting, also on Python 3.9.
+            with tarfile.open(archive) as bundle:
+                for member in bundle.getmembers():
+                    target = Path(stage) / member.name
+                    if not within(target.resolve(), Path(stage).resolve()) or member.isdev() or member.isfifo():
+                        raise ValueError('Unsafe ZCode runtime archive')
+                    if member.issym() or member.islnk():
+                        link = target.parent / member.linkname if member.issym() else Path(stage) / member.linkname
+                        if not within(link.resolve(), Path(stage).resolve()):
+                            raise ValueError('Unsafe ZCode runtime link')
+            result = run(['tar', '-xzf', str(archive), '-C', stage], timeout=120)
+            if result.returncode or not (Path(stage) / 'zcode/bin/zcode.mjs').is_file():
+                raise RuntimeError('Incomplete ZCode runtime')
+            # Keep the previous runtime until the next one has been fully staged.
+            release = root / (Path(stage).name + '-ready')
+            shutil.move(str(Path(stage) / 'zcode'), str(release))
+        script = root / 'launcher'
+        script.write_text('#!/bin/sh\nexec node ' + shlex.quote(str(root / 'current/bin/zcode.mjs')) + ' "$@"\n')
+        script.chmod(0o755)
+        pending = root / 'current.new'
+        if pending.is_symlink():
+            pending.unlink()
+        pending.symlink_to(release.name)
+        pending.replace(root / 'current')
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        if not launcher.is_symlink():
+            launcher.symlink_to(script)
+        for old in root.glob('runtime-*-ready'):
+            if old != release and old.is_dir() and not old.is_symlink():
+                shutil.rmtree(old)
+
+
 def execute(steps, timeout):
     for step in steps:
+        if step[0] == '@zcode-source':
+            build_zcode()
+            continue
         if step[0] in {"@installer", "@pi-uninstaller"}:
             with ExitStack() as stack:
                 terminal_io = {}
@@ -421,75 +562,101 @@ def execute(steps, timeout):
             raise RuntimeError(f"installer/update failed (exit {result.returncode})")
 
 
+def selector_cell(value, width, **alignment):
+    value = clean(value)
+    result, used = '', 0
+    for char in value:
+        size = 2 if unicodedata.east_asian_width(char) in ('W', 'F') else 1
+        if used + size > width:
+            result = result[:-1] + '…'
+            break
+        result += char
+        used += size
+    return cell(result, width, **alignment)
+
+
+def preview_tool(name):
+    if name not in TOOLS:
+        raise ValueError('Unknown AI client')
+    print(name + '\n')
+    print(text('官方安装源', 'Official installation source'))
+    print(TOOLS[name]['url'])
+    if name == 'zcode':
+        print('\n' + text('源码构建：Git、Node.js 24.14+、pnpm（版本以仓库为准）。',
+                           'Source build: Git, Node.js 24.14+, repository-pinned pnpm.'))
+    found = detect_all(name)
+    if not found:
+        print('\n' + text('未安装', 'Not installed'))
+    for item in found:
+        print('\n' + text('安装来源：', 'Source: ') + item.method)
+        print(text('路径：', 'Path: ') + clean(item.path))
+    print('\n' + text('卸载保留配置、凭据与会话。',
+                       'Removal preserves settings, credentials and sessions.'))
+
+
 def choose(action):
     fzf = shutil.which("fzf")
     if not fzf:
-        raise ValueError("fzf unavailable; specify codex/claude/opencode/pi or --all")
+        raise ValueError(text('未找到 fzf，请指定工具名或 --all',
+                              'fzf unavailable; specify tool names or --all'))
     installations = {name: detect_all(name) for name in TOOLS}
     candidates = [name for name, found in installations.items() if action == 'install' or found]
     if not candidates:
         print(text('尚未安装 AI 工具；请运行 ma ai install。',
                    'No clients installed; run ma ai install.'))
         return []
-    rows = []
-    removal_rows = {}
+    # Use the same preview allocation as maci, reserving status/source columns.
+    package_name_width, _ = selector_widths('install')
+    name_width = max(12, package_name_width - 8)
+    state_width, source_width = 16, 14
+    headings = (cell(text('名称', 'Name'), name_width, center=True) + ' ' +
+                cell(text('状态', 'Status'), state_width, center=True) + ' ' +
+                cell(text('安装来源', 'Source'), source_width, right=True))
+    rows, choices = [], {}
     for name in candidates:
         found = installations[name]
-        if action == 'uninstall':
-            for item in found:
-                row = f'{name}\t{text("已安装", "Installed")}\t{item.method}\t{item.path}'
-                rows.append(row)
-                removal_rows[row] = (name, item)
-        else:
+        entries = found if action == 'uninstall' else [None]
+        for item in entries:
             state = text('已安装', 'Installed') if found else text('未安装', 'Not installed')
-            if len(found) > 1:
-                state += text(f'（{len(found)} 处）', f' ({len(found)} copies)')
-            methods = '/'.join(dict.fromkeys(item.method for item in found)) or '-'
-            rows.append(f'{name}\t{state}\t{methods}')
+            if item is None and len(found) > 1:
+                state += f' ({len(found)})'
+            methods = item.method if item else '/'.join(dict.fromkeys(i.method for i in found)) or '-'
+            visible = (selector_cell(name, name_width) + ' ' +
+                       selector_cell(state, state_width, center=True) + ' ' +
+                       selector_cell(methods, source_width, right=True))
+            # Metadata stays hidden; retain exact row identity for duplicate installs.
+            row = '\t'.join([name, str(len(rows)), clean(item.path) if item else '', visible])
+            rows.append(row)
+            choices[row] = (name, item) if item else name
     header = text(
-        "Tab: 多选 | Ctrl+A: 全选 | Ctrl+D: 清除 | Enter: 继续 | Esc: 退出",
-        "Tab: Multi-select | Ctrl+A: Select all | Ctrl+D: Clear | Enter: Continue | Esc: Exit",
-    )
-    prompt = {
-        "install": text("安装 > ", "Install > "),
-        "update": text("更新 > ", "Update > "),
-        "uninstall": text("卸载 > ", "Remove > "),
-    }[action]
+        'Tab 多选  Enter 确认  Ctrl+/ 详情  Esc 退出\nCtrl+A 全选  Ctrl+D 清除',
+        'Tab select  Enter confirm  Ctrl+/ details  Esc exit\nCtrl+A select all  Ctrl+D clear',
+    ) + '\n\n' + headings
+    preview = shlex.join([sys.executable, str(Path(__file__).resolve()), '--preview']) + ' {1}'
+    env = dict(os.environ)
+    env.pop('FZF_DEFAULT_OPTS', None)
+    env.pop('FZF_DEFAULT_OPTS_FILE', None)
+    env['SHELL'] = '/bin/sh'
     selected = run(
-        [
-            fzf,
-            "--multi",
-            "--layout=reverse",
-            "--border",
-            "--height=60%",
-            "--delimiter=\t",
-            "--nth=1",
-            "--prompt",
-            prompt,
-            "--bind",
-            "ctrl-a:select-all,ctrl-d:deselect-all",
-            "--header",
-            header,
-        ],
-        input="\n".join(rows) + "\n",
-        text=True,
-        stdout=subprocess.PIPE,
-        timeout=None,
+        [fzf, '--multi', '--layout=reverse', '--border', '--height=95%',
+         '--info=hidden', '--delimiter=\t', '--nth=1', '--with-nth=4..', '--tabstop=1',
+         '--prompt=' + text('搜索 › ', 'Search › '),
+         '--preview=' + preview, '--preview-window=right:42%:wrap:<50(down:35%:wrap)',
+         '--bind=tab:toggle+down,shift-tab:toggle+up,ctrl-a:select-all,ctrl-d:deselect-all,ctrl-/:toggle-preview',
+         '--header=' + header],
+        input='\n'.join(rows) + '\n', text=True, stdout=subprocess.PIPE,
+        timeout=None, env=env,
     )
     if selected.returncode in {1, 130}:
         return []
     if selected.returncode:
-        raise RuntimeError(f"fzf failed (exit {selected.returncode})")
-    lines = selected.stdout.splitlines()
-    if action == 'uninstall':
-        # Return the exact installation selected, not just its tool name.
-        return [removal_rows[line] for line in dict.fromkeys(lines) if line in removal_rows]
-    selected_names = (line.split("\t", 1)[0] for line in lines)
-    names = list(dict.fromkeys(name for name in selected_names if name in candidates))
-    return names
+        raise RuntimeError(f'fzf failed (exit {selected.returncode})')
+    return [choices[line] for line in dict.fromkeys(selected.stdout.splitlines()) if line in choices]
 
 
 def tool_name(value):
+    if value == 'qoderclicn':
+        value = 'qodercn'
     if value not in TOOLS:
         raise argparse.ArgumentTypeError(
             f"unknown tool: {value}; choose from {', '.join(TOOLS)}"
@@ -562,8 +729,8 @@ def check_updates(names, timeout):
             else:
                 state = text("本机版本较新", "Local version newer")
             print(f"{name:10} {current:25} {published:14} {state} | {found.method} | {found.path}")
-    print(text("最新版本为 npm 上游发布版本；Homebrew 等来源的可用版本可能不同。",
-               "Latest is the npm upstream release; Homebrew availability may differ."))
+    print(text("ZCode 最新版本来自官方源码，其余来自 npm；Homebrew 等渠道的版本可能不同。",
+               "Latest uses official source metadata for ZCode and npm for other clients; Homebrew availability may differ."))
     return int(failed)
 
 
@@ -637,8 +804,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="ma ai",
         description=text(
-            "管理 Codex、Claude Code、OpenCode 和 Pi Agent。",
-            "Manage Codex, Claude Code, OpenCode and Pi Agent.",
+            "管理 Codex、Claude Code、OpenCode、Pi、Qoder CN、Gemini、Qwen 和 ZCode CLI。",
+            "Manage Codex, Claude Code, OpenCode, Pi, Qoder CN, Gemini, Qwen and ZCode CLI.",
         ),
     )
     sub = parser.add_subparsers(dest="action")
@@ -657,7 +824,7 @@ def main(argv=None):
             item.add_argument(
                 "--latest",
                 action="store_true",
-                help="query latest npm publication versions",
+                help="query latest upstream versions",
             )
         if action == "update":
             item.add_argument("--check", action="store_true", help=text(
@@ -703,11 +870,11 @@ def main(argv=None):
             published = ''
             if args.action == 'status' and args.latest:
                 try:
-                    published = f' npm-latest={latest(name, args.timeout)}'
+                    published = f" {'source-latest' if name == 'zcode' else 'npm-latest'}={latest(name, args.timeout)}"
                 except (OSError, ValueError) as error:
                     published = f' latest-query-failed={type(error).__name__}'
                     failed = True
-            active = shutil.which(name)
+            active = (shutil.which('qoderclicn') or shutil.which(name)) if name == 'qodercn' else shutil.which(name)
             active_target = str(Path(active).resolve()) if active else ''
             for found in installations or [Installation()]:
                 current, bad_version = version(found)
@@ -781,7 +948,10 @@ def main(argv=None):
 
 if __name__ == "__main__":
     try:
-        sys.exit(main())
+        if len(sys.argv) == 3 and sys.argv[1] == '--preview':
+            preview_tool(sys.argv[2])
+        else:
+            sys.exit(main())
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         print(text(f"错误：{error}", f"Error: {error}"), file=sys.stderr)
         sys.exit(1)

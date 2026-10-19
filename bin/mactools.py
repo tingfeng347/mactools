@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mactools_runtime import atomic_write, config_dir, text
 
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 COMMANDS = {
     "install": "maci", "remove": "macr", "update": "macu", "doctor": "macd",
     "clean": "macc", "mirror": "macm", "ai": "maca",
@@ -95,7 +95,7 @@ def completion(shell):
         doctor) words="--formula --brew --cask --offline --timeout --help";;
         clean) words="--formula --brew --cask --exact --list --dry-run --yes --timeout --help";;
         mirror) words="test auto restore --json --mirror --timeout --limit --dry-run --yes --force --config-dir --state-dir --help";;
-        ai) words="install remove uninstall update status doctor codex claude opencode pi --all --path --dry-run --yes --check --latest --offline --timeout --help";;
+        ai) words="install remove uninstall update status doctor codex claude opencode pi qodercn gemini qwen zcode --all --path --dry-run --yes --check --latest --offline --timeout --help";;
         setup) words="zh en --help";;
         completion) words="bash zsh fish";;
     esac
@@ -112,7 +112,7 @@ complete -F _mactools_complete ma maci macr macu macd macc macm maca''')
     case "${words[1]:t}:${words[2]}" in
         ma:setup) candidates=(zh en);;
         ma:completion) candidates=(bash zsh fish);;
-        ma:ai|maca:*) candidates=(install remove uninstall update status doctor codex claude opencode pi --all --path --dry-run --yes --check --latest --offline --timeout --help);;
+        ma:ai|maca:*) candidates=(install remove uninstall update status doctor codex claude opencode pi qodercn gemini qwen zcode --all --path --dry-run --yes --check --latest --offline --timeout --help);;
         ma:mirror|macm:*) candidates=(test auto restore --json --mirror --timeout --limit --dry-run --yes --force --config-dir --state-dir --help);;
         ma:doctor|macd:*) candidates=(--formula --brew --cask --offline --timeout --help);;
         ma:clean|macc:*) candidates=(--formula --brew --cask --exact --list --dry-run --yes --timeout --help);;
@@ -145,7 +145,7 @@ compdef _mactools_complete ma maci macr macu macd macc macm maca''')
             for option in options[action].split():
                 print(f"complete -c ma{condition} -l {option}")
                 print(f"complete -c {alias} -l {option}")
-            choices = {"ai": "install remove uninstall update status doctor codex claude opencode pi",
+            choices = {"ai": "install remove uninstall update status doctor codex claude opencode pi qodercn gemini qwen zcode",
                        "mirror": "test auto restore"}.get(action)
             if choices:
                 print(f"complete -c ma{condition} -a '{choices}'")

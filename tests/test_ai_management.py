@@ -310,6 +310,154 @@ class VersionComparisonTests(unittest.TestCase):
         self.assertNotIn('Update available', output.getvalue())
 
 
+class AdditionalClientsTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name).resolve()
+        self.patch_home = patch.object(ai.Path, 'home', return_value=self.home)
+        self.patch_home.start()
+        self.addCleanup(self.patch_home.stop)
+
+    def test_qodercn_old_binary_is_discovered_without_ide_dispatcher_duplicate(self):
+        runtime = self.home / '.qoder-cn/bin/qoderclicn/qoderclicn-1.1.70'
+        runtime.parent.mkdir(parents=True)
+        runtime.write_text('#!/bin/sh\n')
+        runtime.chmod(0o755)
+        launcher = self.home / '.local/bin/qoderclicn'
+        launcher.parent.mkdir(parents=True)
+        launcher.symlink_to(runtime)
+        dispatcher = self.home / '.qoder-cn/entry/qodercn'
+        dispatcher.parent.mkdir(parents=True)
+        dispatcher.write_text('#!/bin/sh\n')
+        dispatcher.chmod(0o755)
+        with patch.dict(os.environ, PATH=str(dispatcher.parent), clear=True), patch.object(ai, 'BREW_PREFIXES', ()):
+            found = ai.detect_all('qodercn')
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].method, 'native')
+        self.assertEqual(ai.plan('qodercn', found[0], 'update'), [[str(launcher), 'update']])
+        config = self.home / '.qoder-cn/settings.json'
+        config.write_text('settings')
+        ai.execute(ai.plan('qodercn', found[0], 'uninstall'), 1)
+        self.assertFalse(launcher.exists())
+        self.assertFalse(runtime.exists())
+        self.assertTrue(dispatcher.exists())
+        self.assertEqual(config.read_text(), 'settings')
+        self.assertEqual(ai.tool_name('qoderclicn'), 'qodercn')
+
+    def test_npm_clients_use_the_official_packages(self):
+        for name, package in [('gemini', '@google/gemini-cli'), ('qwen', '@qwen-code/qwen-code')]:
+            self.assertEqual(ai.plan(name, ai.Installation(), 'install'),
+                             [['npm', 'install', '--global', package + '@latest']])
+            unknown = ai.Installation(str(self.home / '.local/bin' / name), 'unmanaged')
+            with self.assertRaises(ValueError):
+                ai.plan(name, unknown, 'uninstall')
+
+    def test_zcode_source_build_stages_runtime_and_removal_preserves_sessions(self):
+        import tarfile
+        import io
+        config = self.home / '.zcode/sessions/fixture'
+        config.parent.mkdir(parents=True)
+        config.write_text('session')
+        def run(arguments, **kwargs):
+            if arguments == ['node', '--version']:
+                return subprocess.CompletedProcess(arguments, 0, 'v24.14.0')
+            if arguments == ['pnpm', '--version']:
+                return subprocess.CompletedProcess(arguments, 0, '10.33.2')
+            if arguments[:2] == ['git', 'clone']:
+                source = Path(arguments[-1])
+                source.mkdir()
+                (source / 'package.json').write_text(json.dumps({'packageManager': 'pnpm@10.33.2'}))
+            if arguments[:2] == ['pnpm', 'build:zcode']:
+                dist = Path(kwargs['cwd']) / 'dist/zcode'
+                release = dist / 'releases/3.16.1'
+                release.mkdir(parents=True)
+                (dist / 'latest.json').write_text(json.dumps({'version': '3.16.1', 'tarball': 'zcode.tar.gz'}))
+                with tarfile.open(release / 'zcode.tar.gz', 'w:gz') as archive:
+                    data = b'console.log("fixture");'
+                    info = tarfile.TarInfo('zcode/bin/zcode.mjs')
+                    info.size = len(data)
+                    archive.addfile(info, io.BytesIO(data))
+            if arguments[0] == 'tar':
+                return subprocess.run(arguments, check=False)
+            return subprocess.CompletedProcess(arguments, 0)
+        with patch.object(ai.shutil, 'which', return_value='/fixture/tool'), patch.object(ai, 'run', side_effect=run):
+            ai.build_zcode()
+            ai.build_zcode()  # update replaces the runtime without keeping old builds
+        launcher = self.home / '.local/bin/zcode'
+        self.assertTrue(launcher.is_symlink())
+        self.assertTrue((ai.zcode_root() / 'current/bin/zcode.mjs').is_file())
+        self.assertEqual(len(list(ai.zcode_root().glob('runtime-*-ready'))), 1)
+        found = ai.classify('zcode', str(launcher))
+        self.assertEqual(found.method, 'source')
+        ai.execute(ai.plan('zcode', found, 'uninstall'), 1)
+        self.assertFalse(launcher.is_symlink())
+        self.assertFalse(ai.zcode_root().exists())
+        self.assertEqual(config.read_text(), 'session')
+
+    def test_zcode_build_failure_keeps_old_runtime(self):
+        root = ai.zcode_root()
+        root.mkdir(parents=True)
+        old = root / 'previous'
+        old.mkdir()
+        (root / 'current').symlink_to(old)
+        def run(arguments, **kwargs):
+            if arguments == ['node', '--version']:
+                return subprocess.CompletedProcess(arguments, 0, 'v24.14.0')
+            return subprocess.CompletedProcess(arguments, 1)
+        with patch.object(ai.shutil, 'which', return_value='/fixture/tool'), patch.object(ai, 'run', side_effect=run), self.assertRaises(RuntimeError):
+            ai.build_zcode()
+        self.assertEqual((root / 'current').resolve(), old)
+
+
+class SelectorLayoutTests(unittest.TestCase):
+    def test_layout_and_selection_in_both_languages(self):
+        for language in ('zh', 'en'):
+            with self.subTest(language=language), patch.dict(os.environ, {
+                'MACTOOLS_LANG': language, 'FZF_DEFAULT_OPTS': '--filter=bad',
+                'FZF_DEFAULT_OPTS_FILE': '/bad/options',
+            }), patch.object(ai, 'detect_all', return_value=[]), patch.object(
+                ai.shutil, 'which', return_value='/bin/fzf'
+            ), patch.object(ai.shutil, 'get_terminal_size', return_value=os.terminal_size((120, 30))):
+                def selection(arguments, **kwargs):
+                    self.assertIn('--info=hidden', arguments)
+                    self.assertIn('--height=95%', arguments)
+                    self.assertIn('--with-nth=4..', arguments)
+                    self.assertIn('--tabstop=1', arguments)
+                    self.assertIn('--preview-window=right:42%:wrap:<50(down:35%:wrap)', arguments)
+                    self.assertNotIn('FZF_DEFAULT_OPTS', kwargs['env'])
+                    self.assertNotIn('FZF_DEFAULT_OPTS_FILE', kwargs['env'])
+                    header = next(arg for arg in arguments if arg.startswith('--header='))
+                    heading = header.splitlines()[-1]
+                    rows = kwargs['input'].splitlines()
+                    visible = [row.split('\t')[3] for row in rows]
+                    width = lambda value: sum(2 if ai.unicodedata.east_asian_width(c) in ('W', 'F') else 1 for c in value)
+                    self.assertTrue(all(width(row) == width(heading) for row in visible))
+                    self.assertTrue(all(row.startswith(name) for row, name in zip(visible, ai.TOOLS)))
+                    selected = next(row for row in rows if row.startswith('claude\t'))
+                    return subprocess.CompletedProcess(arguments, 0, selected + '\nforged\t99\t\tbad\n')
+                with patch.object(ai, 'run', side_effect=selection):
+                    self.assertEqual(ai.choose('install'), ['claude'])
+
+    @unittest.skipUnless(__import__('shutil').which('fzf'), 'fzf required')
+    def test_real_fzf_filters_names_and_returns_original_metadata(self):
+        def select(arguments, **kwargs):
+            return subprocess.run([*arguments, '--filter=opencode'], **{key: value for key, value in kwargs.items() if key != 'timeout'}, timeout=5)
+        with patch.object(ai, 'detect_all', return_value=[]), patch.object(ai, 'run', side_effect=select):
+            self.assertEqual(ai.choose('install'), ['opencode'])
+
+    def test_preview_is_local_and_preserves_config_message(self):
+        item = ai.Installation('/fixture/bin/codex', 'npm')
+        with patch.dict(os.environ, MACTOOLS_LANG='en'), patch.object(
+            ai, 'detect_all', return_value=[item]
+        ), patch.object(ai, 'fetch') as fetch, patch.object(ai, 'run') as run, redirect_stdout(io.StringIO()) as output:
+            ai.preview_tool('codex')
+        self.assertIn('/fixture/bin/codex', output.getvalue())
+        self.assertIn('preserves settings', output.getvalue())
+        fetch.assert_not_called()
+        run.assert_not_called()
+
+
 class HomebrewAndSafetyTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -394,7 +542,7 @@ class HomebrewAndSafetyTests(unittest.TestCase):
         execute.assert_not_called()
         confirm.assert_not_called()
         for tool in ai.TOOLS.values():
-            self.assertIn(tool['url'], output.getvalue())
+            self.assertIn(tool['package'] if tool.get('install') == 'npm' else tool['url'], output.getvalue())
 
     def test_native_codex_removal_keeps_auth_and_other_package_data(self):
         target = self.executable(self.home / '.codex/packages/standalone/codex')
