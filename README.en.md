@@ -221,7 +221,7 @@ This changes bottle and API download domains. The Homebrew installer, third-part
 
 ```bash
 maca                         # Open the install selector
-maca install codex claude opencode pi
+maca install codex claude opencode pi qodercn gemini qwen zcode
 maca install --all --dry-run
 maca status                  # Local versions, sources, and all installed copies
 maca status --latest          # Also query the latest npm releases
@@ -234,11 +234,17 @@ maca remove --all --dry-run
 maca doctor --offline
 ```
 
-Preserves the ubtools management workflows for Codex, Claude Code, OpenCode, and Pi. New installations use official installer scripts, downloaded to temporary files before execution. Updates follow the detected Homebrew, npm, pnpm, Bun, or official native installation method.
+![AI client selector](docs/images/ai-color.png)
+
+Supports Codex, Claude Code, OpenCode, Pi, Qoder CN, Gemini CLI, Qwen Code and official ZCode CLI. The selector matches `maci`, with a centered name heading, left-aligned names, aligned status/source columns and a details pane toggled with `Ctrl+/`.
+
+Codex, Claude, OpenCode, Pi and Qoder CN use official installer scripts, downloaded before execution. Gemini and Qwen use official npm packages. Qoder CN recognizes both `qodercn` and the legacy `qoderclicn` binary. Updates follow the detected Homebrew, npm, pnpm, Bun or native installation method.
+
+ZCode CLI follows the [official source-build workflow](https://github.com/zai-org/ZCode#readme). It requires Git, Node.js 24.14+ and the repository-pinned pnpm (currently 10.33.2); builds can take some time. The build runs in a temporary directory before switching the runtime under `~/.local/share/mactools/zcode` and creating `~/.local/bin/zcode`. Failed builds preserve the previous version; removal preserves `~/.zcode`. Preview with `maca install zcode --dry-run`.
 
 Homebrew installations are identified by their actual target files, Formula/Cask names, and installation directories to avoid mixing Intel and Apple Silicon Homebrew installations. Symlinks to the same executable are merged into one entry; distinct copies are displayed separately. Unknown installation sources are not automatically updated or removed. Removal preserves client configuration, credentials, and sessions.
 
-`status --latest` and `update --check` compare upstream npm SemVer versions, which can differ from Homebrew or native release channels. Without fzf, specify client names or `--all` directly. The AI selector supports `Tab` to toggle selection, `Ctrl+A` to select all, `Ctrl+D` to deselect all, `Enter` to continue, and `Esc` to exit.
+`status --latest` and `update --check` compare the official source version for ZCode and upstream npm SemVer for other tools, which can differ from Homebrew or native release channels. Without fzf, specify client names or `--all` directly. The AI selector supports `Tab` to toggle selection, `Ctrl+A` to select all, `Ctrl+D` to deselect all, `Enter` to continue, and `Esc` to exit.
 
 ## Shell completion
 
@@ -264,6 +270,6 @@ The project was developed on three parallel feature branches, then reviewed and 
 python3 -m unittest discover -s tests -v
 ```
 
-Tests use temporary directories, fake package managers, local HTTP servers, and pseudo-terminals without installing, updating, or removing actual host software. All 101 local tests passed before publication, including real fzf name filtering and cleanup bindings. CI checks Python 3.9 and 3.13 on macOS and Linux; installer lifecycle tests run only on macOS. See the CI badge above for remote results.
+Tests use temporary directories, fake package managers, local HTTP servers, and pseudo-terminals without installing, updating, or removing actual host software. Local regression checks cover real fzf name filtering and cleanup bindings. CI checks Python 3.9 and 3.13 on macOS and Linux; installer lifecycle tests run only on macOS. See the CI badge above for remote results.
 
 The reference source is pinned to ubtools commit `e2a05261f07207590b3065fa447641c32b4afe0f`. macOS adaptation references: [Homebrew commands](https://docs.brew.sh/Manpage), [Homebrew JSON API](https://docs.brew.sh/Querying-Brew), [Tsinghua bottle mirror](https://mirrors.tuna.tsinghua.edu.cn/help/homebrew-bottles/), and [USTC bottle mirror](https://mirrors.ustc.edu.cn/help/homebrew-bottles.html).

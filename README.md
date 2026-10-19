@@ -221,7 +221,7 @@ source "$HOME/.config/mactools/mirrors.sh"
 
 ```bash
 maca                         # 安装选择界面
-maca install codex claude opencode pi
+maca install codex claude opencode pi qodercn gemini qwen zcode
 maca install --all --dry-run
 maca status                  # 本地版本、来源、全部安装副本
 maca status --latest          # 同时查询 npm 最新发布版本
@@ -234,11 +234,17 @@ maca remove --all --dry-run
 maca doctor --offline
 ```
 
-保留 ubtools 的 Codex / Claude Code / OpenCode / Pi 管理流程。新安装使用官方安装脚本，先下载到临时文件，再单独执行；更新沿用识别到的 Homebrew、npm、pnpm、Bun 或官方原生安装方式。
+![AI 工具选择界面](docs/images/ai-color.png)
+
+支持 Codex、Claude Code、OpenCode、Pi、Qoder CN、Gemini CLI、Qwen Code 和智谱官方 ZCode CLI。选择界面与 `maci` 一致：名称表头居中、内容左对齐，状态与安装来源分列，右侧显示安装详情，`Ctrl+/` 收起或展开。
+
+Codex、Claude、OpenCode、Pi、Qoder CN 新安装使用官方安装脚本，先下载到临时文件，再单独执行；Gemini、Qwen 使用官方 npm 包。Qoder CN 同时识别 `qodercn` 和旧入口 `qoderclicn`。更新沿用识别到的 Homebrew、npm、pnpm、Bun 或官方原生安装方式。
+
+ZCode CLI 按[智谱官方源码构建流程](https://github.com/zai-org/ZCode#readme)安装，需要 Git、Node.js 24.14+ 和仓库指定的 pnpm（当前为 10.33.2），构建时间较长。构建在临时目录进行，成功后切换 `~/.local/share/mactools/zcode` 内的运行文件，并创建 `~/.local/bin/zcode`；构建失败保留旧版本，卸载保留 `~/.zcode`。可先运行 `maca install zcode --dry-run` 查看步骤。
 
 Homebrew 安装会根据目标文件识别真实的 Formula/Cask 名称及安装目录，避免 Intel 与 Apple Silicon 多套 Homebrew 互相误操作。相同可执行文件的软链合并为一处，多副本分别展示；不明来源拒绝自动更新或删除。卸载保留客户端配置、凭据与会话。
 
-`status --latest` / `update --check` 比较的是 npm 上游 SemVer，可能与 Homebrew 或原生发布渠道不同。没有 fzf 时，可直接指定 AI 客户端名称或 `--all`。AI 界面支持 Tab 多选、Ctrl+A 全选、Ctrl+D 取消、Enter 继续、Esc 退出。
+`status --latest` / `update --check` 对 ZCode 比较官方源码版本，其余工具比较 npm 上游 SemVer，可能与 Homebrew 或原生发布渠道不同。没有 fzf 时，可直接指定 AI 客户端名称或 `--all`。AI 界面支持 Tab 多选、Ctrl+A 全选、Ctrl+D 取消、Enter 继续、Esc 退出。
 
 ## Shell 补全
 
@@ -264,6 +270,6 @@ ma completion fish | source
 python3 -m unittest discover -s tests -v
 ```
 
-测试使用临时目录、假包管理器、本地 HTTP 服务和伪终端；不会安装、更新或卸载宿主机上的实际软件。发布前本地完整测试通过 101 项，覆盖真实 fzf 的名称过滤和清理绑定。CI 在 macOS 和 Linux 上分别验证 Python 3.9 / 3.13，安装器生命周期测试仅在 macOS 运行；远端结果见顶部 CI 徽章。
+测试使用临时目录、假包管理器、本地 HTTP 服务和伪终端；不会安装、更新或卸载宿主机上的实际软件。本地回归检查覆盖真实 fzf 的名称过滤和清理绑定。CI 在 macOS 和 Linux 上分别验证 Python 3.9 / 3.13，安装器生命周期测试仅在 macOS 运行；远端结果见顶部 CI 徽章。
 
 参考源固定为 ubtools `e2a05261f07207590b3065fa447641c32b4afe0f`。macOS 适配依据：[Homebrew 命令文档](https://docs.brew.sh/Manpage)、[Homebrew JSON 接口](https://docs.brew.sh/Querying-Brew)、[清华 bottle 镜像](https://mirrors.tuna.tsinghua.edu.cn/help/homebrew-bottles/)、[中科大 bottle 镜像](https://mirrors.ustc.edu.cn/help/homebrew-bottles.html)。

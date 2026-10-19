@@ -6,7 +6,8 @@ Record in a 160-column, 32-row terminal from the repository root:
     stty cols 160 rows 32
     env -u NO_COLOR TERM=xterm-256color script -q .reference/help.typescript ./bin/ma --help
     env -u NO_COLOR TERM=xterm-256color script -q .reference/install.typescript ./bin/maci --dry-run --cask --exact firefox
-Exit the selector with ESC after the preview loads. Then run:
+    env -u NO_COLOR TERM=xterm-256color script -q .reference/ai.typescript ./bin/maca install --dry-run
+Exit each selector with ESC after the preview loads. Then run:
     python scripts/capture_demo.py
 """
 
@@ -83,4 +84,7 @@ if __name__ == '__main__':
     render(recording(ROOT / '.reference' / 'help.typescript'), 'commands-color.png', 'ma --help')
     render(recording(ROOT / '.reference' / 'install.typescript', interactive=True),
            'install-color.png', 'maci --cask --exact firefox  # dry-run demo')
-    print('Saved docs/images/commands-color.png and docs/images/install-color.png')
+    if (ROOT / '.reference' / 'ai.typescript').exists():
+        render(recording(ROOT / '.reference' / 'ai.typescript', interactive=True),
+               'ai-color.png', 'ma ai')
+    print('Saved terminal screenshots in docs/images/')
