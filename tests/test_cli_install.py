@@ -129,6 +129,40 @@ class Install(unittest.TestCase):
         self.assertEqual((target / 'ma').read_text(), 'old')
         self.assertEqual(list(target.iterdir()), [target / 'ma'])
 
+    def test_mid_deployment_failure_restores_files_and_symlinks(self):
+        target = self.root / 'rollback-bin'
+        target.mkdir()
+        original = self.root / 'original-launcher'
+        original.write_text('original executable')
+        (target / 'maci').symlink_to(original)
+        (target / 'macr').write_text('old remove command')
+        injected = self.root / 'failure-injection'
+        injected.mkdir()
+        # Fail once after two replacements. Rollback itself uses real os.replace.
+        (injected / 'sitecustomize.py').write_text('''import os
+from pathlib import Path
+_replace = os.replace
+_failed = False
+def replace(source, destination, *args, **kwargs):
+    global _failed
+    source, destination = Path(source), Path(destination)
+    if (not _failed and destination.name == 'macu'
+            and destination.parent == Path(os.environ['MACTOOLS_TEST_TARGET'])
+            and source.parent.name.startswith('.mactools-stage-')):
+        _failed = True
+        raise OSError('injected deployment failure')
+    return _replace(source, destination, *args, **kwargs)
+os.replace = replace
+''')
+        self.env.update(PYTHONPATH=str(injected), MACTOOLS_TEST_TARGET=str(target))
+        result = self.script('install.sh', '--bin-dir', str(target))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('injected deployment failure', result.stderr)
+        self.assertTrue((target / 'maci').is_symlink())
+        self.assertEqual((target / 'maci').readlink(), original)
+        self.assertEqual((target / 'macr').read_text(), 'old remove command')
+        self.assertEqual({p.name for p in target.iterdir()}, {'maci', 'macr'})
+
     def test_uninstall_cache_only_removes_mactools_child(self):
         cache = self.root / 'cache/mactools'
         cache.mkdir(parents=True)
