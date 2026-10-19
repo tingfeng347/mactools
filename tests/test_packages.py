@@ -234,7 +234,7 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(len(short[1]), len(long[1]))
             self.assertTrue(short[1].startswith("fish"))
             self.assertTrue(long[1].startswith("font-big-shoulders-stencil-display-sc"))
-            self.assertTrue(short[2].endswith("4.9.3"))
+            self.assertTrue(short[2].endswith("4.9.3 ✓"))
             self.assertTrue(short[2].startswith(" "))
 
     def test_source_colors_and_english_types_preserve_alignment(self):
@@ -256,6 +256,38 @@ class PackageTests(unittest.TestCase):
                 self.assertEqual(len(plain[5]), 32)
             with patch.dict(os.environ, NO_COLOR='1'):
                 self.assertNotIn('\033[', packages.Row('formula', 'fish').selector_line('install'))
+
+    def test_white_names_and_green_installed_checks_keep_version_columns_aligned(self):
+        for action in ('install', 'remove', 'update'):
+            for no_color in ('', '1'):
+                with self.subTest(action=action, no_color=no_color), patch.dict(
+                    os.environ, NO_COLOR=no_color, TERM='xterm-256color'
+                ):
+                    installed = packages.Row('formula', 'owner/tools/fish', '4.9.3', '5.0.0')
+                    missing = packages.Row('formula', 'fish')
+                    colored = installed.selector_line(action, (32, 18)).split('\t')
+                    present = packages.without_color(installed.selector_line(action, (32, 18))).split('\t')
+                    absent = packages.without_color(missing.selector_line(action, (32, 18))).split('\t')
+                    self.assertTrue(present[6].endswith('4.9.3 ✓'))
+                    self.assertNotIn('✓', absent[6])
+                    self.assertEqual(len(present[6]), len(absent[6]))
+                    if not no_color:
+                        self.assertIn('\033[37m', colored[5])
+                        self.assertNotIn('38;5;141', colored[5])
+                        self.assertIn('\033[38;5;78m✓', colored[6])
+                    else:
+                        self.assertNotIn('\033[', '\t'.join(colored))
+                    if action == 'update':
+                        self.assertEqual(len(present[7]), len(absent[7]))
+                    self.assertEqual(packages.Row.parse('\t'.join(colored)), installed)
+
+    def test_long_installed_versions_leave_room_for_check(self):
+        row = packages.Row('formula', 'cmake', '4.4.0, 4.4.2, 4.4.3, 4.4.4')
+        line = row.selector_line('install', (32, 18))
+        current = packages.without_color(line).split('\t')[6]
+        self.assertEqual(len(current), 20)
+        self.assertTrue(current.endswith('… ✓'))
+        self.assertEqual(packages.Row.parse(line), row)
 
     def test_chinese_preview_uses_localized_metadata_labels(self):
         with patch.dict(os.environ, {"MACTOOLS_LANG": "zh"}), contextlib.redirect_stdout(io.StringIO()) as output:

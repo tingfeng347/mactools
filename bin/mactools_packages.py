@@ -46,6 +46,19 @@ def cell(value, width, right=False, center=False):
     return padding + value if right else value + padding
 
 
+def clip_cell(value, width):
+    if sum(2 if unicodedata.east_asian_width(c) in ('W', 'F') else 1 for c in value) <= width:
+        return value
+    result, used = '', 0
+    for char in value:
+        size = 2 if unicodedata.east_asian_width(char) in ('W', 'F') else 1
+        if used + size > width - 1:
+            break
+        result += char
+        used += size
+    return result + '…'
+
+
 def selector_widths(action, terminal_width=None):
     columns = terminal_width or shutil.get_terminal_size((120, 24)).columns
     inner = max(40, columns - 4)
@@ -54,7 +67,7 @@ def selector_widths(action, terminal_width=None):
     available = inner - preview - 4 if preview >= 50 else inner - 4
     version_columns = 2 if action == "update" else 1
     version_width = 18
-    name_width = max(20, available - 8 - version_columns * version_width - (version_columns + 1))
+    name_width = max(20, available - 8 - 2 - version_columns * version_width - (version_columns + 1))
     return name_width, version_width
 
 
@@ -82,11 +95,16 @@ class Row:
         official = '/' not in self.name or self.name.startswith('homebrew/')
         kind = cell(source, 8)
         name = cell(self.name, name_width)
-        if not os.environ.get('NO_COLOR') and os.environ.get('TERM') != 'dumb':
+        colored = not os.environ.get('NO_COLOR') and os.environ.get('TERM') != 'dumb'
+        installed = self.current != '-'
+        check = '✓' if installed else ' '
+        if colored:
             color = '38;5;75' if official else '38;5;141'
             kind = f'\033[{color}m{kind}\033[0m'
-            name = f'\033[{color}m{name}\033[0m'
-        columns = [kind, name, cell(current, version_width, right=True)]
+            name = f'\033[37m{name}\033[0m'
+            if installed:
+                check = f'\033[38;5;78m{check}\033[0m'
+        columns = [kind, name, cell(clip_cell(current, version_width), version_width, right=True) + ' ' + check]
         if action == "update":
             columns.append(cell(clean(self.target), version_width, right=True))
         return self.line() + "\t" + "\t".join(columns)
@@ -286,7 +304,7 @@ def select(queries, opts):
         preview = shlex.join([sys.executable, str(Path(__file__).resolve()), "--preview", queries.brew, str(opts.timeout)]) + " {1} {2}"
         headings = cell(text("类型", "Type"), 8) + " " + cell(text("名称", "Name"), name_width, center=True) + " "
         installed_heading = text("已安装版本", "Installed version")
-        headings += cell(installed_heading, version_width, right=True)
+        headings += cell(installed_heading, version_width, right=True) + "  "
         if opts.action == "update":
             headings += " " + cell(text("可更新至", "Available version"), version_width, right=True)
         header = text("Tab 多选  Enter 确认  Ctrl+R 刷新  Ctrl+E 匹配  Ctrl+/ 详情  Esc 退出", "Tab select  Enter confirm  Ctrl+R refresh  Ctrl+E match  Ctrl+/ details  Esc exit") + "\n\n" + headings
