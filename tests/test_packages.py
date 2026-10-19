@@ -232,6 +232,10 @@ class PackageTests(unittest.TestCase):
             short = packages.Row("formula", "fish", "4.9.3").selector_line("install", widths).split("\t")[4:]
             long = packages.Row("cask", "font-big-shoulders-stencil-display-sc").selector_line("install", widths).split("\t")[4:]
             self.assertEqual(len(short[1]), len(long[1]))
+            for name in (short[1], long[1]):
+                left = len(name) - len(name.lstrip())
+                right = len(name) - len(name.rstrip())
+                self.assertLessEqual(abs(left - right), 1)
             self.assertTrue(short[2].endswith("4.9.3"))
             self.assertTrue(short[2].startswith(" "))
 

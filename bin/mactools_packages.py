@@ -33,9 +33,12 @@ def clean(value):
     return re.sub(r"[\x00-\x1f\x7f]", " ", str(value))
 
 
-def cell(value, width, right=False):
+def cell(value, width, right=False, center=False):
     used = sum(2 if unicodedata.east_asian_width(char) in ("W", "F") else 1 for char in value)
     padding = " " * max(0, width - used)
+    if center:
+        left = len(padding) // 2
+        return padding[:left] + value + padding[left:]
     return padding + value if right else value + padding
 
 
@@ -72,7 +75,7 @@ class Row:
         source = text("工具", "CLI") if self.source == "formula" else text("应用", "App")
         current = clean(self.current) if self.current != "-" else text("未安装", "Not installed")
         name_width, version_width = widths or selector_widths(action)
-        columns = [cell(source, 6), cell(self.name, name_width), cell(current, version_width, right=True)]
+        columns = [cell(source, 6), cell(self.name, name_width, center=True), cell(current, version_width, right=True)]
         if action == "update":
             columns.append(cell(clean(self.target), version_width, right=True))
         return self.line() + "\t" + "\t".join(columns)
@@ -270,7 +273,7 @@ def select(queries, opts):
         widths = selector_widths(opts.action)
         name_width, version_width = widths
         preview = shlex.join([sys.executable, str(Path(__file__).resolve()), "--preview", queries.brew, str(opts.timeout)]) + " {1} {2}"
-        headings = cell(text("类型", "Type"), 6) + " " + cell(text("名称", "Name"), name_width) + " "
+        headings = cell(text("类型", "Type"), 6) + " " + cell(text("名称", "Name"), name_width, center=True) + " "
         installed_heading = text("已安装版本", "Installed version")
         headings += cell(installed_heading, version_width, right=True)
         if opts.action == "update":
