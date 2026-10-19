@@ -1,14 +1,22 @@
-# mactools
+<h1 align="center">🍎 mactools</h1>
 
-[简体中文](README.md) | **English**
+<p align="center">
+  <strong>A macOS terminal toolkit — packages, cleanup, mirrors, and AI coding tools</strong>
+</p>
 
-[![CI](https://github.com/tingfeng347/mactools/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tingfeng347/mactools/actions/workflows/ci.yml)
-[![macOS](https://img.shields.io/badge/platform-macOS-111827?logo=apple&logoColor=white)](https://github.com/tingfeng347/mactools)
-[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Bash 3.2+](https://img.shields.io/badge/Bash-3.2%2B-4EAA25?logo=gnubash&logoColor=white)](https://www.gnu.org/software/bash/)
-[![Homebrew](https://img.shields.io/badge/packages-Homebrew-FBB040?logo=homebrew&logoColor=black)](https://brew.sh/)
+<p align="center">
+  <a href="https://github.com/tingfeng347/mactools/actions/workflows/ci.yml"><img src="https://github.com/tingfeng347/mactools/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/tingfeng347/mactools"><img src="https://img.shields.io/badge/macOS-Intel%20%7C%20Apple%20Silicon-111827?logo=apple&amp;logoColor=white" alt="macOS: Intel and Apple Silicon"></a>
+  <a href="https://brew.sh/"><img src="https://img.shields.io/badge/Homebrew-supported-FBB040?logo=homebrew&amp;logoColor=white" alt="Homebrew supported"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&amp;logoColor=white" alt="Python 3.9+"></a>
+  <a href="https://www.gnu.org/software/bash/"><img src="https://img.shields.io/badge/Bash-3.2%2B-4EAA25?logo=gnubash&amp;logoColor=white" alt="Bash 3.2+"></a>
+</p>
 
-A macOS terminal toolkit ported from [ubtools](https://github.com/tingfeng347/ubtools). Use `ma + action` to manage Homebrew Formulae and Casks, diagnose your environment, clean up disk space, select mirrors, and manage AI coding tools.
+<p align="center">
+  <a href="README.md">简体中文</a> · <strong>English</strong>
+</p>
+
+Ported from [ubtools](https://github.com/tingfeng347/ubtools). Use `ma + action` and shortcuts such as `maci` to manage Homebrew Formulae and Casks, environment diagnostics, mirrors, and AI coding tools.
 
 ```bash
 ma install firefox

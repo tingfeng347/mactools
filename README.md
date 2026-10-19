@@ -1,14 +1,22 @@
-# mactools
+<h1 align="center">🍎 mactools</h1>
 
-**简体中文** | [English](README.en.md)
+<p align="center">
+  <strong>macOS 终端工具集 — 搜索安装、更新清理、镜像测速与 AI 编程工具管理</strong>
+</p>
 
-[![CI](https://github.com/tingfeng347/mactools/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tingfeng347/mactools/actions/workflows/ci.yml)
-[![macOS](https://img.shields.io/badge/platform-macOS-111827?logo=apple&logoColor=white)](https://github.com/tingfeng347/mactools)
-[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Bash 3.2+](https://img.shields.io/badge/Bash-3.2%2B-4EAA25?logo=gnubash&logoColor=white)](https://www.gnu.org/software/bash/)
-[![Homebrew](https://img.shields.io/badge/packages-Homebrew-FBB040?logo=homebrew&logoColor=black)](https://brew.sh/)
+<p align="center">
+  <a href="https://github.com/tingfeng347/mactools/actions/workflows/ci.yml"><img src="https://github.com/tingfeng347/mactools/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/tingfeng347/mactools"><img src="https://img.shields.io/badge/macOS-Intel%20%7C%20Apple%20Silicon-111827?logo=apple&amp;logoColor=white" alt="macOS: Intel and Apple Silicon"></a>
+  <a href="https://brew.sh/"><img src="https://img.shields.io/badge/Homebrew-supported-FBB040?logo=homebrew&amp;logoColor=white" alt="Homebrew supported"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&amp;logoColor=white" alt="Python 3.9+"></a>
+  <a href="https://www.gnu.org/software/bash/"><img src="https://img.shields.io/badge/Bash-3.2%2B-4EAA25?logo=gnubash&amp;logoColor=white" alt="Bash 3.2+"></a>
+</p>
 
-macOS 终端工具集，移植自 [ubtools](https://github.com/tingfeng347/ubtools)。使用 `ma + 动作` 管理 Homebrew Formula / Cask、诊断环境、清理空间、选择镜像和管理 AI 编程工具。
+<p align="center">
+  <strong>简体中文</strong> · <a href="README.en.md">English</a>
+</p>
+
+移植自 [ubtools](https://github.com/tingfeng347/ubtools)，使用 `ma + 动作` 和 `maci` 等快捷命令，统一管理 Homebrew Formula / Cask、环境诊断、镜像源和 AI 编程工具。
 
 ```bash
 ma install firefox
