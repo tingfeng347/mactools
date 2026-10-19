@@ -255,17 +255,15 @@ def select(queries, opts):
     query, exact = " ".join(opts.query), opts.exact
     while True:
         preview = shlex.join([sys.executable, str(Path(__file__).resolve()), "--preview", queries.brew, str(opts.timeout)]) + " {1} {2}"
-        title = {"install": text("安装软件", "Install packages"), "remove": text("卸载软件", "Remove packages"), "update": text("更新软件", "Update packages")}[opts.action]
-        mode = text("连续匹配", "Exact") if exact else text("模糊匹配", "Fuzzy")
         headings = cell(text("类型", "Type"), 6) + " " + cell(text("名称", "Name"), 32) + " "
         installed_heading = text("已安装版本", "Installed version")
         headings += cell(installed_heading, 22) if opts.action == "update" else installed_heading
         if opts.action == "update":
             headings += " " + text("可更新至", "Available version")
-        header = title + " · " + mode + "\n" + text("Tab 多选  Enter 确认  Ctrl+R 刷新  Ctrl+E 匹配  Ctrl+/ 详情  Esc 退出", "Tab select  Enter confirm  Ctrl+R refresh  Ctrl+E match  Ctrl+/ details  Esc exit") + "\n\n" + headings
+        header = text("Tab 多选  Enter 确认  Ctrl+R 刷新  Ctrl+E 匹配  Ctrl+/ 详情  Esc 退出", "Tab select  Enter confirm  Ctrl+R refresh  Ctrl+E match  Ctrl+/ details  Esc exit") + "\n\n" + headings
         argv = [fzf, "--multi", "--delimiter=\t", "--nth=2", "--with-nth=5..", "--tabstop=1",
                 "--print-query", "--expect=ctrl-e,ctrl-r", "--query=" + query,
-                "--height=95%", "--layout=reverse", "--border", "--tiebreak=index",
+                "--height=95%", "--layout=reverse", "--border", "--tiebreak=index", "--info=hidden",
                 "--preview=" + preview, "--preview-window=right:42%:wrap:<50(down:35%:wrap)",
                 "--prompt=" + text("搜索 › ", "Search › "),
                 "--bind=tab:toggle+down,shift-tab:toggle+up,alt-j:last,alt-k:first,ctrl-/:toggle-preview",
