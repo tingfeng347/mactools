@@ -439,6 +439,18 @@ class SelectorLayoutTests(unittest.TestCase):
                 with patch.object(ai, 'run', side_effect=selection):
                     self.assertEqual(ai.choose('install'), ['claude'])
 
+    def test_name_column_stays_compact_in_wide_terminal(self):
+        with patch.object(ai, 'detect_all', return_value=[]), patch.object(
+            ai.shutil, 'which', return_value='/bin/fzf'
+        ), patch.object(ai.shutil, 'get_terminal_size', return_value=os.terminal_size((200, 32))):
+            def selection(arguments, **kwargs):
+                row = kwargs['input'].splitlines()[0].split('\t')[3]
+                # Name, status and source columns stay compact as the window grows.
+                self.assertEqual(row.index('已安装') if '已安装' in row else row.index('未安装'), 30)
+                return subprocess.CompletedProcess(arguments, 130, '')
+            with patch.dict(os.environ, MACTOOLS_LANG='zh'), patch.object(ai, 'run', side_effect=selection):
+                self.assertEqual(ai.choose('install'), [])
+
     @unittest.skipUnless(__import__('shutil').which('fzf'), 'fzf required')
     def test_real_fzf_filters_names_and_returns_original_metadata(self):
         def select(arguments, **kwargs):

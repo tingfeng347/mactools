@@ -607,7 +607,7 @@ def choose(action):
         return []
     # Use the same preview allocation as maci, reserving status/source columns.
     package_name_width, _ = selector_widths('install')
-    name_width = max(12, package_name_width - 8)
+    name_width = min(24, max(12, package_name_width - 8))
     state_width, source_width = 16, 14
     headings = (cell(text('名称', 'Name'), name_width, center=True) + ' ' +
                 cell(text('状态', 'Status'), state_width, center=True) + ' ' +
