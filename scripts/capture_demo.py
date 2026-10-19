@@ -83,7 +83,7 @@ def render(screen, filename, command):
 if __name__ == '__main__':
     render(recording(ROOT / '.reference' / 'help.typescript'), 'commands-color.png', 'ma --help')
     render(recording(ROOT / '.reference' / 'install.typescript', interactive=True),
-           'install-color.png', 'maci --cask --exact firefox  # dry-run demo')
+           'install-sources.png', 'maci --cask --exact firefox  # dry-run demo')
     if (ROOT / '.reference' / 'ai.typescript').exists():
         render(recording(ROOT / '.reference' / 'ai.typescript', interactive=True),
                'ai-color.png', 'ma ai')

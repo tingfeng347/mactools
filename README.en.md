@@ -29,9 +29,9 @@ Supports Intel and Apple Silicon, works with macOS system Bash 3.2, and uses the
 
 ## Interface demo
 
-Search, selection, and package details: the name heading is centered, package names are left aligned, and versions are right aligned. Use `Tab` to select multiple packages and `Ctrl+/` to toggle details.
+Search, selection, and package details: Blue marks official Homebrew sources; purple marks third-party taps. Types use `formula` / `cask`. the name heading is centered, package names are left aligned, and versions are right aligned. Use `Tab` to select multiple packages and `Ctrl+/` to toggle details.
 
-![maci searching for Firefox with Homebrew package details on the right](docs/images/install-color.png)
+![maci searching for Firefox with Homebrew package details on the right](docs/images/install-sources.png)
 
 Commands and shortcuts:
 
