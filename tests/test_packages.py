@@ -238,6 +238,87 @@ for row in rows:
         opts.sources = ['formula', 'cask']
         self.assertEqual(packages.cached_selector(queries, opts), combined)
 
+    def test_filtered_selector_can_reuse_combined_snapshot(self):
+        opts = packages.parser().parse_intermixed_args(['remove'])
+        queries = packages.Queries(str(self.brew), 2)
+        result = [packages.Row('formula', 'git', '1'), packages.Row('cask', 'firefox', '120')]
+        self.write_snapshot('remove', result)
+        for source in ('formula', 'cask'):
+            opts.sources = [source]
+            with self.subTest(source=source):
+                self.assertEqual(packages.cached_selector(queries, opts), [r for r in result if r.source == source])
+
+    def test_terminated_preview_reaps_its_brew_query(self):
+        import signal
+        pid_path = self.root / 'preview-brew.pid'
+        self.brew.write_text('#!' + sys.executable + '\n' +
+            'import os,time\nfrom pathlib import Path\n' +
+            'Path(os.environ["PREVIEW_BREW_PID"]).write_text(str(os.getpid()))\n' +
+            'time.sleep(10)\n')
+        env = dict(os.environ, PREVIEW_BREW_PID=str(pid_path))
+        process = subprocess.Popen([sys.executable, str(Path(packages.__file__).resolve()),
+            '--preview', str(self.brew), '15', 'formula', 'git'], env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        brew_pid = None
+        try:
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                try:
+                    brew_pid = int(pid_path.read_text())
+                    break
+                except (FileNotFoundError, ValueError):
+                    time.sleep(0.02)
+            self.assertIsNotNone(brew_pid, 'fixture brew did not start')
+            process.terminate()
+            process.communicate(timeout=2)
+            with self.assertRaises(ProcessLookupError, msg='preview left a brew query running'):
+                os.kill(brew_pid, 0)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate()
+            if brew_pid:
+                try:
+                    os.killpg(brew_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+    def test_fzf_forced_preview_cancellation_includes_brew_process_group(self):
+        import signal
+        pid_path = self.root / 'fzf-preview-brew.pid'
+        self.brew.write_text('#!' + sys.executable + '\n' +
+            'import os,time\nfrom pathlib import Path\n' +
+            'Path(os.environ["PREVIEW_BREW_PID"]).write_text(str(os.getpid()))\n' +
+            'time.sleep(10)\n')
+        process = subprocess.Popen([sys.executable, str(Path(packages.__file__).resolve()),
+            '--preview', str(self.brew), '15', 'formula', 'git'],
+            env=dict(os.environ, PREVIEW_BREW_PID=str(pid_path), FZF_PREVIEW_COLUMNS='80'),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+        brew_pid = None
+        try:
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                try:
+                    brew_pid = int(pid_path.read_text())
+                    break
+                except (FileNotFoundError, ValueError):
+                    time.sleep(0.02)
+            self.assertIsNotNone(brew_pid, 'fixture brew did not start')
+            # fzf forcibly kills the whole preview group. The query must be in
+            # that group, because SIGKILL cannot run Python cleanup handlers.
+            self.assertEqual(os.getpgid(brew_pid), process.pid)
+            os.killpg(process.pid, signal.SIGKILL)
+            process.communicate(timeout=2)
+        finally:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.communicate()
+            if brew_pid:
+                try:
+                    os.killpg(brew_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
     def test_install_list_filters_name_not_source_or_version_and_never_caches(self):
         code, output = self.invoke("install", "--list", "--exact", "git")
         self.assertEqual(code, 0)
@@ -254,6 +335,7 @@ for row in rows:
         _, output = self.invoke("install", "--list", "--brew")
         self.assertNotIn("cask\t", output)
         self.assertNotIn(["casks"], [call["args"] for call in self.calls()])
+        self.assertIn(['info', '--json=v2', '--installed', '--formula'], [call['args'] for call in self.calls()])
         _, output = self.invoke("remove", "--list", "--formula", "--cask")
         self.assertIn("formula\tgit", output)
         self.assertIn("cask\tfirefox", output)
@@ -532,6 +614,9 @@ for row in rows:
         self.assertEqual(code, 0)
         self.assertIn("owner/apps/firefox", output)
         self.assertEqual(self.mutations(), [["upgrade", "--cask", "owner/apps/firefox"]])
+        arguments = [call['args'] for call in self.calls()]
+        self.assertIn(['outdated', '--json=v2', '--cask'], arguments)
+        self.assertIn(['info', '--json=v2', '--installed', '--cask'], arguments)
 
     def test_ui_can_select_installed_row_without_waiting_for_catalog(self):
         self.fzf.write_text("#!" + sys.executable + "\nimport sys\nrow=sys.stdin.readline().strip()\nprint('\\n\\n'+row)\n")

@@ -121,8 +121,9 @@ class Row:
 
 class Queries:
     """Own query processes so leaving fzf also stops outstanding brew requests."""
-    def __init__(self, brew, timeout):
+    def __init__(self, brew, timeout, detached=True):
         self.brew, self.timeout = brew, timeout
+        self.detached = detached
         self.env = brew_env()
         self.env["HOMEBREW_NO_AUTO_UPDATE"] = "1"
         self.lock = threading.Lock()
@@ -135,7 +136,8 @@ class Queries:
                 raise BrewError("Query cancelled")
             process = subprocess.Popen([self.brew, *args], stdout=subprocess.PIPE,
                                        stderr=subprocess.PIPE, text=True, env=self.env,
-                                       start_new_session=True)
+                                       start_new_session=self.detached)
+            process._mactools_detached = self.detached
             self.processes.add(process)
         try:
             try:
@@ -144,6 +146,11 @@ class Queries:
                 self.stop(process)
                 process.communicate()
                 raise BrewError(text("Homebrew 查询超时", "Homebrew query timed out"), 124)
+            except BaseException:
+                # Preview cancellation must reap its detached brew process too.
+                self.stop(process)
+                process.communicate()
+                raise
             if process.returncode:
                 raise BrewError(clean(errors.strip()) or "Homebrew query failed", process.returncode)
             return output
@@ -153,6 +160,18 @@ class Queries:
 
     @staticmethod
     def stop(process):
+        if not getattr(process, '_mactools_detached', True):
+            # A preview query shares fzf's group so forced preview cancellation
+            # kills it too. Never signal the caller's entire process group here.
+            try:
+                process.terminate()
+                process.wait(timeout=0.3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            except ProcessLookupError:
+                pass
+            return
         try:
             os.killpg(process.pid, signal.SIGTERM)
             process.wait(timeout=0.3)
@@ -241,7 +260,10 @@ def cached_catalog(path, brew):
 
 
 def json_inventory(queries, action, sources):
-    raw = queries.capture("outdated", "--json=v2") if action == "update" else queries.capture("info", "--json=v2", "--installed")
+    arguments = ['outdated', '--json=v2'] if action == 'update' else ['info', '--json=v2', '--installed']
+    if len(sources) == 1:
+        arguments.append('--' + sources[0])
+    raw = queries.capture(*arguments)
     data = json.loads(raw)
     if not isinstance(data, dict):
         raise ValueError("Invalid Homebrew JSON inventory")
@@ -249,7 +271,7 @@ def json_inventory(queries, action, sources):
     if action == "update" and "cask" in sources and data.get("casks"):
         # Outdated JSON emits cask short tokens. Keep the installed tap identity
         # so an identically named cask in another tap cannot be upgraded instead.
-        inventory = json.loads(queries.capture("info", "--json=v2", "--installed"))
+        inventory = json.loads(queries.capture("info", "--json=v2", "--installed", "--cask"))
         for item in inventory_items(inventory, "casks"):
             token = item.get("token")
             if token:
@@ -337,24 +359,30 @@ def selector_cache_path(action, sources=None):
 
 
 def cached_selector(queries, opts):
-    try:
-        payload = json.loads(selector_cache_path(opts.action, opts.sources).read_text())
-        stamp = payload['time']
-        if (payload.get('brew') != queries.brew or payload.get('sources') != opts.sources
-                or not isinstance(stamp, (int, float)) or not math.isfinite(stamp)
-                or not 0 <= time.time() - stamp < SELECTOR_CACHE_SECONDS):
-            return None
-        result = []
-        for line in payload['rows']:
-            row = Row.parse(line)
-            if row.source not in opts.sources or row.line() != line:
-                return None
-            if opts.action != 'install' and row.current == '-':
-                return None
-            result.append(row)
-        return result
-    except (OSError, ValueError, TypeError, KeyError, AttributeError):
-        return None
+    paths = dict.fromkeys([selector_cache_path(opts.action, opts.sources), selector_cache_path(opts.action)])
+    for path in paths:
+        try:
+            payload = json.loads(path.read_text())
+            stamp, sources = payload['time'], payload['sources']
+            if (payload.get('brew') != queries.brew
+                    or sources not in (['formula'], ['cask'], ['formula', 'cask'])
+                    or not set(opts.sources).issubset(sources)
+                    or not isinstance(stamp, (int, float)) or not math.isfinite(stamp)
+                    or not 0 <= time.time() - stamp < SELECTOR_CACHE_SECONDS):
+                continue
+            result = []
+            for line in payload['rows']:
+                row = Row.parse(line)
+                if row.source not in sources or row.line() != line:
+                    raise ValueError('Invalid cached row')
+                if opts.action != 'install' and row.current == '-':
+                    raise ValueError('Invalid cached installation state')
+                if row.source in opts.sources:
+                    result.append(row)
+            return result
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            continue
+    return None
 
 
 def save_selector(queries, opts, result):
@@ -439,6 +467,7 @@ def select(queries, opts):
 
         def produce():
             try:
+                fresh_lines = []
                 if cached is not None:
                     for index, row in enumerate(cached):
                         process.stdin.write(render(row) + '\n')
@@ -449,6 +478,8 @@ def select(queries, opts):
                 for index, row in enumerate(rows(queries, opts)):
                     fresh.append(row)
                     line = render(row)
+                    if cached is not None:
+                        fresh_lines.append(line + '\n')
                     emitted[(row.source, row.name)] = row
                     if cached is None:
                         process.stdin.write(line + '\n')
@@ -456,7 +487,7 @@ def select(queries, opts):
                             process.stdin.flush()
                 if not queries.cancelled:
                     if cached is not None:
-                        atomic_write(ready, ''.join(row.selector_line(opts.action, widths) + '\n' for row in fresh).encode())
+                        atomic_write(ready, ''.join(fresh_lines).encode())
                     save_selector(queries, opts, fresh)
                     completed.set()
             except BrokenPipeError:
@@ -612,7 +643,7 @@ def preview(argv):
     brew, timeout, source, name = argv
     if source not in ("formula", "cask"):
         raise ValueError("Invalid source")
-    queries = Queries(brew, float(timeout))
+    queries = Queries(brew, float(timeout), detached='FZF_PREVIEW_COLUMNS' not in os.environ)
     try:
         data = json.loads(queries.capture("info", "--json=v2", "--" + source, package_name(name)))
         items = inventory_items(data, "formulae" if source == "formula" else "casks")
@@ -647,8 +678,14 @@ if __name__ == "__main__":
     try:
         if sys.argv[1:2] == ['--wait-snapshot']:
             status = wait_snapshot(sys.argv[2], float(sys.argv[3]))
+        elif sys.argv[1:2] == ['--preview']:
+            def cancel_preview(signum, frame):
+                raise KeyboardInterrupt
+            signal.signal(signal.SIGTERM, cancel_preview)
+            signal.signal(signal.SIGHUP, cancel_preview)
+            status = preview(sys.argv[2:])
         else:
-            status = preview(sys.argv[2:]) if sys.argv[1:2] == ["--preview"] else main(sys.argv[1:])
+            status = main(sys.argv[1:])
     except (OSError, ValueError, KeyboardInterrupt, BrewError) as error:
         print(str(error), file=sys.stderr)
         status = 130 if isinstance(error, KeyboardInterrupt) else 1
