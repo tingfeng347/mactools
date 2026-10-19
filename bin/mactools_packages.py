@@ -33,6 +33,10 @@ def clean(value):
     return re.sub(r"[\x00-\x1f\x7f]", " ", str(value))
 
 
+def without_color(value):
+    return re.sub(r"\x1b\[[0-9;]*m", "", value)
+
+
 def cell(value, width, right=False, center=False):
     used = sum(2 if unicodedata.east_asian_width(char) in ("W", "F") else 1 for char in value)
     padding = " " * max(0, width - used)
@@ -50,7 +54,7 @@ def selector_widths(action, terminal_width=None):
     available = inner - preview - 4 if preview >= 50 else inner - 4
     version_columns = 2 if action == "update" else 1
     version_width = 18
-    name_width = max(20, available - 6 - version_columns * version_width - (version_columns + 1))
+    name_width = max(20, available - 8 - version_columns * version_width - (version_columns + 1))
     return name_width, version_width
 
 
@@ -72,10 +76,17 @@ class Row:
 
     def selector_line(self, action, widths=None):
         # Keep canonical fields hidden for preview commands and selection validation.
-        source = text("工具", "CLI") if self.source == "formula" else text("应用", "App")
+        source = self.source
         current = clean(self.current) if self.current != "-" else text("未安装", "Not installed")
         name_width, version_width = widths or selector_widths(action)
-        columns = [cell(source, 6), cell(self.name, name_width), cell(current, version_width, right=True)]
+        official = '/' not in self.name or self.name.startswith('homebrew/')
+        kind = cell(source, 8)
+        name = cell(self.name, name_width)
+        if not os.environ.get('NO_COLOR') and os.environ.get('TERM') != 'dumb':
+            color = '38;5;75' if official else '38;5;141'
+            kind = f'\033[{color}m{kind}\033[0m'
+            name = f'\033[{color}m{name}\033[0m'
+        columns = [kind, name, cell(current, version_width, right=True)]
         if action == "update":
             columns.append(cell(clean(self.target), version_width, right=True))
         return self.line() + "\t" + "\t".join(columns)
@@ -273,13 +284,13 @@ def select(queries, opts):
         widths = selector_widths(opts.action)
         name_width, version_width = widths
         preview = shlex.join([sys.executable, str(Path(__file__).resolve()), "--preview", queries.brew, str(opts.timeout)]) + " {1} {2}"
-        headings = cell(text("类型", "Type"), 6) + " " + cell(text("名称", "Name"), name_width, center=True) + " "
+        headings = cell(text("类型", "Type"), 8) + " " + cell(text("名称", "Name"), name_width, center=True) + " "
         installed_heading = text("已安装版本", "Installed version")
         headings += cell(installed_heading, version_width, right=True)
         if opts.action == "update":
             headings += " " + cell(text("可更新至", "Available version"), version_width, right=True)
         header = text("Tab 多选  Enter 确认  Ctrl+R 刷新  Ctrl+E 匹配  Ctrl+/ 详情  Esc 退出", "Tab select  Enter confirm  Ctrl+R refresh  Ctrl+E match  Ctrl+/ details  Esc exit") + "\n\n" + headings
-        argv = [fzf, "--multi", "--delimiter=\t", "--nth=2", "--with-nth=5..", "--tabstop=1",
+        argv = [fzf, "--ansi", "--multi", "--delimiter=\t", "--nth=2", "--with-nth=5..", "--tabstop=1",
                 "--print-query", "--expect=ctrl-e,ctrl-r", "--query=" + query,
                 "--height=95%", "--layout=reverse", "--border", "--tiebreak=index", "--info=hidden",
                 "--preview=" + preview, "--preview-window=right:42%:wrap:<50(down:35%:wrap)",
@@ -349,7 +360,7 @@ def select(queries, opts):
         for line in fields[2:]:
             row = Row.parse(line)
             actual = emitted.get((row.source, row.name))
-            if actual is None or actual.selector_line(opts.action, widths) != line:
+            if actual is None or without_color(actual.selector_line(opts.action, widths)) != without_color(line):
                 raise ValueError("Unknown package selection")
             if actual not in selected:
                 selected.append(actual)

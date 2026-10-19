@@ -229,13 +229,33 @@ class PackageTests(unittest.TestCase):
         for terminal_width in (160, 200):
             widths = packages.selector_widths("install", terminal_width)
             self.assertGreater(widths[0], 32)
-            short = packages.Row("formula", "fish", "4.9.3").selector_line("install", widths).split("\t")[4:]
-            long = packages.Row("cask", "font-big-shoulders-stencil-display-sc").selector_line("install", widths).split("\t")[4:]
+            short = packages.without_color(packages.Row("formula", "fish", "4.9.3").selector_line("install", widths)).split("\t")[4:]
+            long = packages.without_color(packages.Row("cask", "font-big-shoulders-stencil-display-sc").selector_line("install", widths)).split("\t")[4:]
             self.assertEqual(len(short[1]), len(long[1]))
             self.assertTrue(short[1].startswith("fish"))
             self.assertTrue(long[1].startswith("font-big-shoulders-stencil-display-sc"))
             self.assertTrue(short[2].endswith("4.9.3"))
             self.assertTrue(short[2].startswith(" "))
+
+    def test_source_colors_and_english_types_preserve_alignment(self):
+        with patch.dict(os.environ, MACTOOLS_LANG='zh', NO_COLOR='', TERM='xterm-256color'):
+            for source, name, color, label in (
+                ('formula', 'fish', '38;5;75', 'formula'),
+                ('formula', 'homebrew/core/fish', '38;5;75', 'formula'),
+                ('cask', 'homebrew/cask/firefox', '38;5;75', 'cask'),
+                ('formula', 'owner/tools/fish', '38;5;141', 'formula'),
+                ('cask', 'owner/apps/firefox', '38;5;141', 'cask'),
+            ):
+                row = packages.Row(source, name).selector_line('install', (32, 18))
+                fields = row.split('\t')
+                self.assertEqual(fields[1], name)
+                self.assertIn('\033[' + color + 'm', fields[4])
+                self.assertEqual(packages.without_color(fields[4]).strip(), label)
+                plain = packages.without_color(row).split('\t')
+                self.assertEqual(len(plain[4]), 8)
+                self.assertEqual(len(plain[5]), 32)
+            with patch.dict(os.environ, NO_COLOR='1'):
+                self.assertNotIn('\033[', packages.Row('formula', 'fish').selector_line('install'))
 
     def test_chinese_preview_uses_localized_metadata_labels(self):
         with patch.dict(os.environ, {"MACTOOLS_LANG": "zh"}), contextlib.redirect_stdout(io.StringIO()) as output:
@@ -300,12 +320,27 @@ class PackageTests(unittest.TestCase):
         env = dict(os.environ)
         env.pop("FZF_DEFAULT_OPTS", None)
         env.pop("FZF_DEFAULT_OPTS_FILE", None)
-        argv = [REAL_FZF, "--multi", "--delimiter=\t", "--nth=2", "--with-nth=5..", "--tabstop=1", "--filter=git"]
+        argv = [REAL_FZF, "--ansi", "--multi", "--delimiter=\t", "--nth=2", "--with-nth=5..", "--tabstop=1", "--filter=git"]
         fuzzy = subprocess.run(argv, input=rows, text=True, capture_output=True, env=env, check=True)
         exact = subprocess.run(argv + ["--exact"], input=rows, text=True, capture_output=True, env=env, check=True)
         self.assertEqual({line.split("\t")[1] for line in fuzzy.stdout.splitlines()}, {"git", "g-i-t"})
         self.assertEqual({line.split("\t")[1] for line in exact.stdout.splitlines()}, {"git"})
         self.assertEqual(packages.Row.parse(exact.stdout.strip()), packages.Row("formula", "git", "1", "2"))
+
+    @unittest.skipUnless(REAL_FZF, 'host fzf unavailable')
+    def test_real_fzf_colored_rows_keep_selection_metadata(self):
+        with patch.dict(os.environ, NO_COLOR='', TERM='xterm-256color'):
+            rows = [packages.Row('formula', 'fish'), packages.Row('formula', 'owner/tools/fish')]
+            data = '\n'.join(row.selector_line('install') for row in rows) + '\n'
+            env = dict(os.environ)
+            env.pop('FZF_DEFAULT_OPTS', None)
+            env.pop('FZF_DEFAULT_OPTS_FILE', None)
+            result = subprocess.run([REAL_FZF, '--ansi', '--delimiter=\t', '--nth=2',
+                                     '--with-nth=5..', '--filter=fish'], input=data, text=True,
+                                    capture_output=True, check=True, env=env)
+            self.assertEqual({packages.Row.parse(line) for line in result.stdout.splitlines()}, set(rows))
+            self.assertEqual({packages.without_color(line) for line in result.stdout.splitlines()},
+                             {packages.without_color(row.selector_line('install')) for row in rows})
 
     def test_selection_and_timeout_validation(self):
         for value in ("nan", "inf", "0", "-1"):
