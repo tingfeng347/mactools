@@ -198,7 +198,7 @@ macm restore --dry-run
 macm restore --force         # 明确允许覆盖片段中的手动修改
 ```
 
-默认候选为官方 GHCR、清华、中科大，最多四个并发。根据官方 Homebrew API 取得本机架构的 `hello` bottle，验证完整样本的 SHA-256，再比较相同样本的实际下载速度；样本上限 8 MiB，测速结果仅代表当前网络下的小文件表现。应用前同时检查所选镜像的 API。
+默认候选为官方 GHCR、清华、中科大，最多四个并发。根据官方 Homebrew API 取得 `hello` bottle（优先本机架构，缺失时使用其他 macOS 架构；仅下载校验，不执行），验证完整样本的 SHA-256，再比较相同样本的实际下载速度；样本上限 8 MiB，测速结果仅代表当前网络下的小文件表现。应用前同时检查所选镜像的 API。
 
 ```bash
 macm test --mirror official --mirror tuna --timeout 5 --limit 4

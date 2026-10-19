@@ -76,9 +76,12 @@ def reference(timeout):
     except (KeyError, TypeError) as exc:
         raise ValueError('Invalid official Homebrew reference metadata') from exc
     arm = platform.machine() in ('arm64', 'aarch64')
-    candidates = [(tag, entry) for tag, entry in files.items() if isinstance(tag, str) and 'linux' not in tag and tag.startswith('arm64_') == arm]
+    candidates = [(tag, entry) for tag, entry in files.items() if isinstance(tag, str) and 'linux' not in tag]
+    # Samples are downloaded and hashed, never executed. Prefer native bottles,
+    # but keep benchmarking when upstream no longer publishes that architecture.
+    candidates.sort(key=lambda item: item[0].startswith('arm64_') != arm)
     if not candidates:
-        raise ValueError('No macOS reference bottle found for this architecture')
+        raise ValueError('No macOS reference bottle found in official Homebrew metadata')
     tag, entry = candidates[0]
     if not isinstance(entry, dict) or not isinstance(entry.get('sha256'), str) or not isinstance(entry.get('url'), str):
         raise ValueError('Invalid official Homebrew bottle metadata')

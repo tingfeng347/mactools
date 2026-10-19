@@ -216,6 +216,34 @@ class MirrorTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Invalid official'):
                 mirror.reference(1)
 
+    def test_reference_prefers_native_and_falls_back_to_other_macos_architecture(self):
+        entry = {'sha256': mirror.digest(PAYLOAD),
+                 'url': mirror.OFFICIAL_BOTTLES + '/hello/blobs/sha256:' + mirror.digest(PAYLOAD)}
+        for machine, tags, expected in (
+            ('x86_64', ['arm64_tahoe', 'x86_64_linux'], 'arm64_tahoe'),
+            ('x86_64', ['arm64_tahoe', 'sonoma'], 'sonoma'),
+            ('arm64', ['sonoma', 'arm64_tahoe'], 'arm64_tahoe'),
+            ('arm64', ['sonoma', 'x86_64_linux'], 'sonoma'),
+        ):
+            metadata = {'versions': {'stable': '2.12.2'},
+                        'bottle': {'stable': {'files': {tag: entry for tag in tags}}}}
+            with self.subTest(machine=machine, tags=tags), \
+                    patch.object(mirror.platform, 'machine', return_value=machine), \
+                    patch.object(mirror, 'fetch', return_value=json.dumps(metadata).encode()), \
+                    patch.object(mirror, 'bottle_fetch', return_value=PAYLOAD) as download:
+                sample = mirror.reference(1)
+                self.assertEqual(sample['filename'], f'hello-2.12.2.{expected}.bottle.tar.gz')
+                self.assertEqual(sample['sha256'], mirror.digest(PAYLOAD))
+                download.assert_called_once_with(entry['url'], 1)
+
+    def test_reference_rejects_linux_only_samples(self):
+        metadata = {'bottle': {'stable': {'files': {'x86_64_linux': {}, 'arm64_linux': {}}}}}
+        with patch.object(mirror, 'fetch', return_value=json.dumps(metadata).encode()), \
+                patch.object(mirror, 'bottle_fetch') as download:
+            with self.assertRaisesRegex(ValueError, 'No macOS reference bottle'):
+                mirror.reference(1)
+            download.assert_not_called()
+
     def test_oversized_bottle_rejected(self):
         with patch.object(mirror, 'SAMPLE_LIMIT', 32):
             result = mirror.measure('large', self.url, self.sample, 1)

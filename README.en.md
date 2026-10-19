@@ -198,7 +198,7 @@ macm restore --dry-run
 macm restore --force         # Explicitly allow overwriting manual snippet edits
 ```
 
-Default candidates are official GHCR, Tsinghua, and USTC, with up to four concurrent checks. The benchmark uses the official Homebrew API to find a `hello` bottle for the local architecture, verifies the complete sample's SHA-256, and compares download speeds using the same sample. Samples are limited to 8 MiB; results reflect small-file performance on the current network. The selected mirror's API is also checked before applying it.
+Default candidates are official GHCR, Tsinghua, and USTC, with up to four concurrent checks. The benchmark uses the official Homebrew API to find a `hello` bottle, preferring the local architecture and falling back to another macOS architecture when unavailable (samples are never executed), verifies the complete sample's SHA-256, and compares download speeds using the same sample. Samples are limited to 8 MiB; results reflect small-file performance on the current network. The selected mirror's API is also checked before applying it.
 
 ```bash
 macm test --mirror official --mirror tuna --timeout 5 --limit 4
