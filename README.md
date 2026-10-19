@@ -1,0 +1,209 @@
+# mactools
+
+macOS 终端工具集，移植自 [ubtools](https://github.com/tingfeng347/ubtools)。使用 `ma + 动作` 管理 Homebrew Formula / Cask、诊断环境、清理空间、选择镜像和管理 AI 编程工具。
+
+```bash
+ma install firefox
+maci firefox                 # 与 ma install 相同
+ma update --list
+ma ai install --all --dry-run
+```
+
+支持 Intel 与 Apple Silicon，兼容 macOS 系统 Bash 3.2，业务逻辑使用 Python 3.9+ 标准库。
+
+## 安装与卸载
+
+在项目目录内运行：
+
+```bash
+brew install python fzf       # 已安装时可跳过
+bash install.sh
+```
+
+默认部署到 `~/.local/bin`，不需要 sudo。如果该目录不在 PATH 中，在当前终端执行，并按需添加到自己的 `~/.zshrc`：
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+也可以由安装脚本显式安装依赖，或指定安装目录：
+
+```bash
+bash install.sh --install-deps
+bash install.sh --bin-dir "$HOME/bin"
+bash install.sh --dry-run
+```
+
+依赖 Homebrew 需自行按 [官方说明](https://brew.sh)安装。安装器会完整暂存并检查全部文件，再部署入口与共享模块；部署写入失败会尝试恢复旧文件。源码目录中也可以直接使用 `./bin/ma` 或 `./bin/maci`。
+
+```bash
+bash uninstall.sh --dry-run
+bash uninstall.sh
+bash uninstall.sh --purge-cache
+bash uninstall.sh --bin-dir "$HOME/bin"
+```
+
+卸载只删除 mactools 自己的入口和模块；保留应用、依赖、AI 登录与会话、语言设置、镜像片段和镜像备份。`--purge-cache` 仅额外删除当前用户的 mactools 缓存。
+
+安装脚本也支持独立下载模式，按 GitHub Raw、jsDelivr 顺序尝试；**新项目尚未发布到 GitHub 时，请使用上面的本地安装方式**。下载地址可以用 `MACTOOLS_DOWNLOAD_BASES` 指定（空格分隔）。
+
+## 完整命令与缩写
+
+| 功能 | 完整命令 | 缩写 |
+|---|---|---|
+| 搜索并安装软件 | `ma install` | `maci` |
+| 搜索并卸载软件 | `ma remove` | `macr` |
+| 查看并更新软件 | `ma update` | `macu` |
+| 环境、缓存和连通性检查 | `ma doctor` | `macd` |
+| 预览并清理空间 | `ma clean` | `macc` |
+| 镜像源测速、切换和恢复 | `ma mirror` | `macm` |
+| AI 编程工具管理 | `ma ai` | `maca` |
+
+```bash
+ma --help
+ma help mirror
+ma update --help
+ma --version
+ma setup en                  # 保存英文设置
+ma setup zh                  # 保存中文设置（默认）
+```
+
+`MACTOOLS_LANG=zh|en` 可临时覆盖保存的语言；配置默认位于 `~/.config/mactools`，遵循 `XDG_CONFIG_HOME`。
+
+## 搜索、安装、卸载与更新
+
+```bash
+maci firefox                 # Formula + Cask 名称搜索，交互式选择
+maci --formula wget          # 命令行工具；--brew 是 --formula 别名
+maci --cask firefox          # macOS 应用
+maci --formula --cask python # 可以组合来源
+maci --exact wget            # 连续子串匹配；默认 fzf 模糊匹配
+maci --list firefox          # 只列出匹配项，不进入交互
+maci --refresh               # 重新获取名称目录
+
+macr                        # 多选已安装软件
+macr --cask firefox
+macr --dry-run firefox      # 选择后只显示卸载计划
+
+macu                        # 新旧版本列表，多选更新
+macu --formula
+macu --list                 # 只读列出可更新软件
+macu --dry-run              # 只预览选中的更新命令
+macu --refresh-index        # 先确认并执行 brew update，再查看更新
+```
+
+安装、卸载、更新都会显示操作计划并确认；`--yes` 仅跳过 mactools 的确认，保留 Homebrew 自己的事务提示。不会使用 `sudo brew`，卸载不传入 `--zap`。
+
+安装界面展示来源、名称和已安装版本，预览区显示 Homebrew 软件详情。更新界面展示已安装版本和目标版本。搜索只匹配名称，来源、版本和安装状态不参与匹配。
+
+| 按键 | 操作 |
+|---|---|
+| `Tab` / `Shift+Tab` | 多选 / 反向多选 |
+| `Enter` | 进入操作计划与确认 |
+| `Ctrl+R` | 刷新当前列表 |
+| `Ctrl+E` | 切换连续子串 / 模糊匹配 |
+| `Esc` | 退出并终止后台列表查询 |
+
+列表在后台加载，名称目录缓存一小时；优先展示已有缓存，查询失败可回退到已有缓存。缓存默认在 `~/Library/Caches/mactools`，遵循 `XDG_CACHE_HOME`。安装状态和更新清单每次重新读取。`--list` 与 `--dry-run` 不写工具缓存，也不执行包变更。
+
+包查询默认每项超时 15 秒，可用 `--timeout 30` 调整。仅显式 `ma update --refresh-index` 会刷新 Homebrew 索引；它不能与 `--list` / `--dry-run` 组合。
+
+## 诊断与清理
+
+```bash
+macd
+macd --offline               # 仅本地检查
+macd --formula --timeout 5
+
+macc                         # 多选清理入口，先原生预览再确认
+macc --list                  # 只列出清理入口
+macc --dry-run               # 执行原生 --dry-run 预览，不删除文件
+macc --cask --dry-run
+```
+
+诊断按 `OK` / `WARN` / `FAIL` / `SKIP` 输出依赖、架构、Homebrew 前缀、Xcode Command Line Tools、包列表、缓存年龄与联网结果，并显示耗时。`FAIL` 返回非零状态；缺失的可选工具记为 `SKIP`，Homebrew 自身的建议记为 `WARN`。
+
+清理使用 Homebrew 自己的 `cleanup --dry-run`、`autoremove --dry-run` 展示预览。确认后执行对应原生命令；不清除应用数据，不使用 `--zap`。Formula 和 Cask 可分别筛选。
+
+## 镜像源
+
+```bash
+macm                         # 测速后确认是否应用
+macm test                    # 只测速
+macm test --json
+macm auto --dry-run          # 预览最快镜像的配置，不写文件
+macm auto                    # 备份、确认并写入最快可用镜像
+macm restore                 # 精确恢复最近一次配置
+macm restore --dry-run
+macm restore --force         # 明确允许覆盖片段中的手动修改
+```
+
+默认候选为官方 GHCR、清华、中科大，最多四个并发。根据官方 Homebrew API 取得本机架构的 `hello` bottle，验证完整样本的 SHA-256，再比较相同样本的实际下载速度；样本上限 8 MiB，测速结果仅代表当前网络下的小文件表现。应用前同时检查所选镜像的 API。
+
+```bash
+macm test --mirror official --mirror tuna --timeout 5 --limit 4
+macm test --mirror https://your-mirror.example/homebrew-bottles
+```
+
+自定义地址需提供标准 Homebrew bottle 路径；自动切换还需在其 `/api` 下提供 Homebrew API。
+
+镜像切换写入专属片段 `~/.config/mactools/mirrors.sh`，不自动编辑 `.zshrc`。命令完成后会显示需要在当前终端执行的语句：
+
+```bash
+source "$HOME/.config/mactools/mirrors.sh"
+```
+
+需要新终端继续生效时，将该 `source` 语句加入自己的 shell 配置。备份默认保存在 `~/Library/Application Support/mactools`，遵循 `XDG_STATE_HOME`。`--config-dir` / `--state-dir` 可指定隔离目录。写入带锁，失败回滚；恢复校验备份与当前片段，发现手动修改时拒绝覆盖，除非显式传入 `--force`。
+
+这里切换 bottle/API 下载域名；Homebrew 安装器、第三方 tap Git 远程及 Cask 上游下载地址由各自项目管理。网络无法读取官方参考数据时，测速会失败并保留现有配置。
+
+## AI 编程工具
+
+```bash
+maca                         # 安装选择界面
+maca install codex claude opencode pi
+maca install --all --dry-run
+maca status                  # 本地版本、来源、全部安装副本
+maca status --latest          # 同时查询 npm 最新发布版本
+maca update                  # 多选已安装工具
+maca update codex --check     # 只检查上游新版本，不更新
+maca update --all
+maca remove                  # 按安装路径分别多选卸载
+maca remove codex --path "$HOME/.local/bin/codex"
+maca remove --all --dry-run
+maca doctor --offline
+```
+
+保留 ubtools 的 Codex / Claude Code / OpenCode / Pi 管理流程。新安装使用官方安装脚本，先下载到临时文件，再单独执行；更新沿用识别到的 Homebrew、npm、pnpm、Bun 或官方原生安装方式。
+
+Homebrew 安装会根据目标文件识别真实的 Formula/Cask 名称及安装目录，避免 Intel 与 Apple Silicon 多套 Homebrew 互相误操作。相同可执行文件的软链合并为一处，多副本分别展示；不明来源拒绝自动更新或删除。卸载保留客户端配置、凭据与会话。
+
+`status --latest` / `update --check` 比较的是 npm 上游 SemVer，可能与 Homebrew 或原生发布渠道不同。没有 fzf 时，可直接指定 AI 客户端名称或 `--all`。AI 界面支持 Tab 多选、Ctrl+A 全选、Ctrl+D 取消、Enter 继续、Esc 退出。
+
+## Shell 补全
+
+```bash
+# Bash
+source <(ma completion bash)
+
+# Zsh
+autoload -Uz compinit && compinit
+source <(ma completion zsh)
+
+# Fish
+ma completion fish | source
+```
+
+补全覆盖 `ma` 和七个缩写入口，不在补全期间联网查询。
+
+## 移植与验证
+
+本项目按三个功能分支并行开发，再由独立 agent 审查与合并。规格与功能对应见 [移植规格](docs/PORTING.md)，审查记录见 [审查报告](docs/REVIEW.md)。原始参考源码在本项目 `.reference/ubtools`，并行开发工作目录在 `.worktrees`，这两个目录不提交。
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+测试使用临时目录、假包管理器、本地 HTTP 服务和伪终端；不会安装、更新或卸载宿主机上的实际软件。CI 配置在 macOS 和 Linux 上分别验证 Python 3.9 / 3.13，安装器生命周期测试仅在 macOS 运行。
+
+参考源固定为 ubtools `e2a05261f07207590b3065fa447641c32b4afe0f`。macOS 适配依据：[Homebrew 命令文档](https://docs.brew.sh/Manpage)、[Homebrew JSON 接口](https://docs.brew.sh/Querying-Brew)、[清华 bottle 镜像](https://mirrors.tuna.tsinghua.edu.cn/help/homebrew-bottles/)、[中科大 bottle 镜像](https://mirrors.ustc.edu.cn/help/homebrew-bottles.html)。

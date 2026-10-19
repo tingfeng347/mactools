@@ -1,0 +1,19 @@
+name: Test mactools
+on: [push, pull_request]
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+        python: ['3.9', '3.13']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Validate launchers using system Bash
+        run: |
+          for file in install.sh uninstall.sh bin/ma bin/maci bin/macr bin/macu bin/macd bin/macc bin/macm bin/maca; do /bin/bash -n "$file"; done
+      - name: Isolated tests (no actual package installs)
+        run: python3 -m unittest discover -s tests -v

@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
+if ! command -v python3 >/dev/null 2>&1; then
+    printf '%s\n' 'mactools 需要 Python 3.9+，请运行 brew install python。' >&2
+    exit 1
+fi
+exec python3 -c 'import os,sys; p=os.path.join(os.path.dirname(os.path.realpath(sys.argv[1])), "ma"); os.execv(p, [p, "remove", *sys.argv[2:]])' "$0" "$@"

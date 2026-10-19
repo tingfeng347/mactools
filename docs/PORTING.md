@@ -21,3 +21,13 @@ AI 模块 bin/mactools_ai.py: main(argv)，argv 不包含 ai。
 运行时 bin/mactools_runtime.py 复用上游接口，新增 brew_path()/brew_env()/cache_dir()/config_dir()/state_dir()。
 main 返回退出状态整数；入口统一捕获 OSError/ValueError/TimeoutExpired/KeyboardInterrupt。
 每分支提交实现及隔离测试，只修改所负责模块和独有测试文件，禁止真实安装/卸载机器软件或切源。
+
+## 并行任务
+
+- feat/packages：Homebrew 目录/缓存、fzf 安装卸载更新、隔离包管理器测试。
+- feat/system：诊断/清理、镜像瓶校验/备份/回滚/恢复、本地 HTTP 测试。
+- feat/ai：上游 AI 管理复用、macOS 多 Homebrew 前缀识别、伪终端测试。
+- main：ma/七个缩写、语言设置、三种 shell 补全、安装卸载、文档与 CI。
+- 独立 review/merge agent：核对本规格与上游、审查各功能分支、合并并完整验证。
+
+参考源码和并行工作目录保存在项目自身 .reference/ubtools 和 .worktrees 下。

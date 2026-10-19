@@ -122,7 +122,7 @@ def brew_path():
 
 def brew_env():
     env = dict(os.environ)
-    env.setdefault("HOMEBREW_NO_AUTO_UPDATE", "1")
+    env["HOMEBREW_NO_AUTO_UPDATE"] = "1"
     env.setdefault("HOMEBREW_NO_ANALYTICS", "1")
     return env
 

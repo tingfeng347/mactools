@@ -1,0 +1,9 @@
+#!/bin/bash
+# Compatible with macOS system Bash; Python resolves symlinks portably.
+set -euo pipefail
+if ! command -v python3 >/dev/null 2>&1; then
+    printf '%s\n' 'mactools 需要 Python 3.9+。请运行 brew install python。' >&2
+    exit 1
+fi
+export PYTHONDONTWRITEBYTECODE=1
+exec python3 -c 'import os,sys; p=os.path.join(os.path.dirname(os.path.realpath(sys.argv[1])), "mactools.py"); sys.argv=sys.argv[1:]; sys.argv[0]=p; exec(compile(open(p,"rb").read(),p,"exec"), {"__name__":"__main__", "__file__":p})' "$0" "$@"
