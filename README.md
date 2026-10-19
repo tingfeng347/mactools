@@ -11,6 +11,18 @@ ma ai install --all --dry-run
 
 支持 Intel 与 Apple Silicon，兼容 macOS 系统 Bash 3.2，业务逻辑使用 Python 3.9+ 标准库。
 
+## 界面演示
+
+搜索、选择与软件详情：名称表头居中、软件名左对齐、版本靠右，`Tab` 多选，`Ctrl+/` 收起或展开详情。
+
+![maci 搜索 Firefox，并在右侧预览 Homebrew 软件详情](docs/images/install.png)
+
+完整命令和快捷入口：
+
+![ma 帮助界面，展示七项功能及对应缩写](docs/images/commands.png)
+
+截图来自当前程序的真实终端输出，安装界面使用 `--dry-run`，未执行软件安装。重录方法见 [截图脚本](scripts/capture_demo.py)；Pillow 和 pyte 仅用于生成文档图片，运行 mactools 无需这些依赖。
+
 ## 安装与卸载
 
 在项目目录内运行：
