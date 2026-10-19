@@ -15,11 +15,13 @@ import subprocess
 import sys
 import threading
 import time
+import tempfile
 import unicodedata
 
-from mactools_runtime import brew_env, brew_path, cache_dir, command, confirm, save_json, text
+from mactools_runtime import atomic_write, brew_env, brew_path, cache_dir, command, confirm, save_json, text
 
 CACHE_SECONDS = 3600
+SELECTOR_CACHE_SECONDS = 24 * 3600
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9@+_.-]*(?:/[A-Za-z0-9][A-Za-z0-9@+_.-]*){0,2}$")
 
 
@@ -306,18 +308,6 @@ def rows(queries, opts):
     known = {(row.source, row.name): row for row in installed}
     # Installed rows arrive before potentially slow catalog enumeration.
     yield from sorted(installed, key=lambda row: (row.source, row.name))
-    # Emit even expired cached names first; refreshes prepare this and future runs.
-    if not opts.refresh:
-        for source in opts.sources:
-            payload = cached_catalog(cache_dir() / ("packages-" + source + ".json"), queries.brew)
-            if payload is None:
-                continue
-            names = payload[0]
-            for name in names:
-                if (source, name) not in known:
-                    row = Row(source, name)
-                    known[(source, name)] = row
-                    yield row
     with ThreadPoolExecutor(max_workers=len(opts.sources)) as pool:
         futures = {pool.submit(catalog, queries, source, opts.refresh, not (opts.list or opts.dry_run)): source for source in opts.sources}
         for future in as_completed(futures):
@@ -341,53 +331,146 @@ def matches(name, query, exact=False):
     return True
 
 
+def selector_cache_path(action, sources=None):
+    suffix = '' if sources is None or sources == ['formula', 'cask'] else '-' + '-'.join(sources)
+    return cache_dir() / ('selector-' + action + suffix + '.json')
+
+
+def cached_selector(queries, opts):
+    try:
+        payload = json.loads(selector_cache_path(opts.action, opts.sources).read_text())
+        stamp = payload['time']
+        if (payload.get('brew') != queries.brew or payload.get('sources') != opts.sources
+                or not isinstance(stamp, (int, float)) or not math.isfinite(stamp)
+                or not 0 <= time.time() - stamp < SELECTOR_CACHE_SECONDS):
+            return None
+        result = []
+        for line in payload['rows']:
+            row = Row.parse(line)
+            if row.source not in opts.sources or row.line() != line:
+                return None
+            if opts.action != 'install' and row.current == '-':
+                return None
+            result.append(row)
+        return result
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return None
+
+
+def save_selector(queries, opts, result):
+    if opts.list or opts.dry_run or queries.cancelled:
+        return
+    try:
+        save_json(selector_cache_path(opts.action, opts.sources), {
+            'brew': queries.brew, 'sources': opts.sources, 'time': time.time(),
+            'rows': [row.line() for row in result],
+        })
+    except OSError:
+        # A cache is optional; read-only Homebrew operations still work without it.
+        pass
+
+
+def wait_snapshot(path, timeout):
+    """fzf reload helper: wait for our parent's atomic snapshot, never run brew."""
+    path = Path(path)
+    deadline = time.monotonic() + timeout
+    while path.parent.is_dir() and time.monotonic() < deadline:
+        try:
+            with path.open() as stream:
+                shutil.copyfileobj(stream, sys.stdout)
+            return 0
+        except FileNotFoundError:
+            time.sleep(0.02)
+    return 1
+
+
+def fzf_identity_options(fzf, env):
+    # New fzf versions can preserve selections when refreshed version text changes.
+    try:
+        result = subprocess.run([fzf, '--help'], stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                text=True, timeout=1, env=env)
+        return ['--id-nth=1,2'] if result.returncode == 0 and '--id-nth' in result.stdout else []
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+
+
 def select(queries, opts):
-    fzf = shutil.which("fzf")
+    fzf = shutil.which('fzf')
     if not fzf:
-        raise ValueError(text("未找到 fzf，请先运行 brew install fzf", "fzf not found. Run brew install fzf first"))
-    query, exact = " ".join(opts.query), opts.exact
+        raise ValueError(text('未找到 fzf，请先运行 brew install fzf', 'fzf not found. Run brew install fzf first'))
+    query, exact = ' '.join(opts.query), opts.exact
     while True:
         widths = selector_widths(opts.action)
         name_width, version_width = widths
-        preview = shlex.join([sys.executable, str(Path(__file__).resolve()), "--preview", queries.brew, str(opts.timeout)]) + " {1} {2}"
-        headings = cell(text("类型", "Type"), 8) + " " + cell(text("名称", "Name"), name_width, center=True) + " "
-        installed_heading = text("已安装版本", "Installed version")
-        headings += cell(installed_heading, version_width, right=True) + "  "
-        if opts.action == "update":
-            headings += " " + cell(text("可更新至", "Available version"), version_width, right=True)
-        header = text("Tab 多选  Enter 确认  Ctrl+R 刷新  Ctrl+E 匹配  Ctrl+/ 详情  Esc 退出", "Tab select  Enter confirm  Ctrl+R refresh  Ctrl+E match  Ctrl+/ details  Esc exit") + "\n\n" + headings
-        argv = [fzf, "--ansi", "--multi", "--delimiter=\t", "--nth=2", "--with-nth=5..", "--tabstop=1",
-                "--print-query", "--expect=ctrl-e,ctrl-r", "--query=" + query,
-                "--height=95%", "--layout=reverse", "--border", "--tiebreak=index", "--info=hidden",
-                "--preview=" + preview, "--preview-window=right:42%:wrap:<50(down:35%:wrap)",
-                "--prompt=" + text("搜索 › ", "Search › "),
-                "--bind=tab:toggle+down,shift-tab:toggle+up,ctrl-a:select-all,alt-j:last,alt-k:first,ctrl-/:toggle-preview",
-                "--header=" + header]
+        preview = shlex.join([sys.executable, str(Path(__file__).resolve()), '--preview', queries.brew, str(opts.timeout)]) + ' {1} {2}'
+        headings = cell(text('类型', 'Type'), 8) + ' ' + cell(text('名称', 'Name'), name_width, center=True) + ' '
+        headings += cell(text('已安装版本', 'Installed version'), version_width, right=True) + '  '
+        if opts.action == 'update':
+            headings += ' ' + cell(text('可更新至', 'Available version'), version_width, right=True)
+        header = text('Tab 多选  Enter 确认  Ctrl+R 刷新  Ctrl+E 匹配  Ctrl+/ 详情  Esc 退出', 'Tab select  Enter confirm  Ctrl+R refresh  Ctrl+E match  Ctrl+/ details  Esc exit') + '\n\n' + headings
+        argv = [fzf, '--ansi', '--multi', '--delimiter=\t', '--nth=2', '--with-nth=5..', '--tabstop=1',
+                '--print-query', '--expect=ctrl-e,ctrl-r', '--query=' + query,
+                '--height=95%', '--layout=reverse', '--border', '--tiebreak=index', '--info=hidden',
+                '--preview=' + preview, '--preview-window=right:42%:wrap:<50(down:35%:wrap)',
+                '--prompt=' + text('搜索 › ', 'Search › '),
+                '--bind=tab:toggle+down,shift-tab:toggle+up,ctrl-a:select-all,alt-j:last,alt-k:first,ctrl-/:toggle-preview',
+                '--header=' + header]
         if exact:
-            argv.append("--exact")
+            argv.append('--exact')
         env = dict(os.environ)
-        # User defaults can alter delimiters/output and compromise selection parsing.
-        env.pop("FZF_DEFAULT_OPTS", None)
-        env.pop("FZF_DEFAULT_OPTS_FILE", None)
-        env["SHELL"] = "/bin/sh"
+        env.pop('FZF_DEFAULT_OPTS', None)
+        env.pop('FZF_DEFAULT_OPTS_FILE', None)
+        env['SHELL'] = '/bin/sh'
+        cached = cached_selector(queries, opts)
+        temporary = tempfile.TemporaryDirectory(prefix='ma-selector-')
+        ready = Path(temporary.name) / 'rows'
+        if cached is not None:
+            reload = shlex.join([sys.executable, str(Path(__file__).resolve()), '--wait-snapshot', str(ready), str(opts.timeout * 3 + 5)])
+            argv += ['--bind=load:unbind(load)+reload-sync:' + reload, *fzf_identity_options(fzf, env)]
         process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env)
-        errors, emitted = [], {}
+        errors, emitted, allowed = [], {}, set()
+        completed = threading.Event()
+
+        def render(row):
+            line = row.selector_line(opts.action, widths)
+            allowed.add(without_color(line))
+            return line
 
         def produce():
             try:
-                for row in rows(queries, opts):
+                if cached is not None:
+                    for index, row in enumerate(cached):
+                        process.stdin.write(render(row) + '\n')
+                        if index % 128 == 0:
+                            process.stdin.flush()
+                    process.stdin.close()
+                fresh = []
+                for index, row in enumerate(rows(queries, opts)):
+                    fresh.append(row)
+                    line = render(row)
                     emitted[(row.source, row.name)] = row
-                    process.stdin.write(row.selector_line(opts.action, widths) + "\n")
-                    process.stdin.flush()
+                    if cached is None:
+                        process.stdin.write(line + '\n')
+                        if index % 128 == 0:
+                            process.stdin.flush()
+                if not queries.cancelled:
+                    if cached is not None:
+                        atomic_write(ready, ''.join(row.selector_line(opts.action, widths) + '\n' for row in fresh).encode())
+                    save_selector(queries, opts, fresh)
+                    completed.set()
             except BrokenPipeError:
                 pass
             except Exception as error:
                 if not queries.cancelled:
                     errors.append(error)
                     print(str(error), file=sys.stderr)
+                    if cached is not None:
+                        atomic_write(ready, ''.join(row.selector_line(opts.action, widths) + '\n' for row in cached).encode())
             finally:
                 try:
-                    process.stdin.close()
+                    if not process.stdin.closed:
+                        process.stdin.close()
                 except BrokenPipeError:
                     pass
 
@@ -397,24 +480,31 @@ def select(queries, opts):
             output = process.stdout.read()
             process.stdout.close()
             status = process.wait()
+            fields = output.splitlines()
+            accepted = status == 0 and len(fields) > 2 and fields[1] == ''
+            if cached is not None and accepted and not completed.is_set():
+                print(text('正在核对所选软件的最新状态…', 'Checking the selected packages against current state…'), file=sys.stderr)
+                # Reuse the refresh already in flight instead of cancelling and
+                # launching the same expensive inventory queries a second time.
+                worker.join(timeout=opts.timeout * 3 + 5)
         finally:
             queries.close()
             worker.join(timeout=opts.timeout + 1)
             if process.poll() is None:
                 process.terminate()
                 process.wait()
-        # Cancellation never applies a partially loaded selection.
+            temporary.cleanup()
         if status in (1, 130):
             if errors and status != 130:
                 raise errors[0]
             return []
         if status:
-            raise BrewError("fzf failed", status)
+            raise BrewError('fzf failed', status)
         fields = output.splitlines()
-        query = fields[0] if fields else ""
-        key = fields[1] if len(fields) > 1 else ""
-        if key in ("ctrl-e", "ctrl-r"):
-            if key == "ctrl-e":
+        query = fields[0] if fields else ''
+        key = fields[1] if len(fields) > 1 else ''
+        if key in ('ctrl-e', 'ctrl-r'):
+            if key == 'ctrl-e':
                 exact = not exact
             else:
                 opts.refresh = True
@@ -425,11 +515,28 @@ def select(queries, opts):
         selected = []
         for line in fields[2:]:
             row = Row.parse(line)
-            actual = emitted.get((row.source, row.name))
-            if actual is None or without_color(actual.selector_line(opts.action, widths)) != without_color(line):
-                raise ValueError("Unknown package selection")
-            if actual not in selected:
-                selected.append(actual)
+            if without_color(line) not in allowed:
+                raise ValueError('Unknown package selection')
+            if row not in selected:
+                selected.append(row)
+        if cached is not None and selected:
+            if not completed.is_set():
+                # Enter may beat the refresh. Cache never authorizes a mutation.
+                fresh_queries = Queries(queries.brew, opts.timeout)
+                try:
+                    fresh = list(rows(fresh_queries, opts))
+                    emitted = {(row.source, row.name): row for row in fresh}
+                    save_selector(fresh_queries, opts, fresh)
+                finally:
+                    fresh_queries.close()
+            verified = []
+            for row in selected:
+                actual = emitted.get((row.source, row.name))
+                if actual is not None:
+                    verified.append(actual)
+                else:
+                    print(text('跳过状态已变化的软件：', 'Skip package whose state changed: ') + row.name)
+            return verified
         return selected
 
 
@@ -538,7 +645,10 @@ def preview(argv):
 
 if __name__ == "__main__":
     try:
-        status = preview(sys.argv[2:]) if sys.argv[1:2] == ["--preview"] else main(sys.argv[1:])
+        if sys.argv[1:2] == ['--wait-snapshot']:
+            status = wait_snapshot(sys.argv[2], float(sys.argv[3]))
+        else:
+            status = preview(sys.argv[2:]) if sys.argv[1:2] == ["--preview"] else main(sys.argv[1:])
     except (OSError, ValueError, KeyboardInterrupt, BrewError) as error:
         print(str(error), file=sys.stderr)
         status = 130 if isinstance(error, KeyboardInterrupt) else 1

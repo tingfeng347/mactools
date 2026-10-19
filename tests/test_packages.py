@@ -23,6 +23,11 @@ import json, os, signal, subprocess, sys, time
 args = sys.argv[1:]
 with open(os.environ["BREW_LOG"], "a") as f:
     f.write(json.dumps({"args": args, "auto": os.getenv("HOMEBREW_NO_AUTO_UPDATE")}) + "\n")
+if args[:2] == ["info", "--json=v2"]:
+    time.sleep(float(os.environ.get("INVENTORY_DELAY", "0")))
+if args[:2] == ["info", "--json=v2"] and os.environ.get("BREW_INFO_JSON"):
+    print(os.environ["BREW_INFO_JSON"])
+    sys.exit(0)
 if os.environ.get("FAIL_COMMAND") == args[0]:
     print("stub brew failure", file=sys.stderr)
     sys.exit(7)
@@ -97,6 +102,141 @@ class PackageTests(unittest.TestCase):
 
     def mutations(self):
         return [call["args"] for call in self.calls() if call["args"][0] in ("install", "uninstall", "upgrade", "update")]
+
+    def write_snapshot(self, action, result, sources=None):
+        snapshot = self.root / ('cache/mactools/selector-' + action + '.json')
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        snapshot.write_text(json.dumps({'brew': str(self.brew), 'time': time.time(),
+            'sources': sources or ['formula', 'cask'], 'rows': [row.line() for row in result]}))
+        return snapshot
+
+    def cached_fzf(self, reload=False):
+        # Implement only the fzf transport contract. The actual refresh worker,
+        # atomic snapshot helper, inventory parsing and command plans all run.
+        self.fzf.write_text('#!' + sys.executable + '\n' + r"""import os,sys,time,json,subprocess
+if sys.argv[1:] == ['--help']:
+    print('--id-nth')
+    raise SystemExit(0)
+start=time.monotonic()
+first=sys.stdin.readline()
+if os.environ.get('FIRST_ROW_RESULT'):
+    open(os.environ['FIRST_ROW_RESULT'], 'w').write(str(time.monotonic()-start) if first else 'empty')
+rows=([first.rstrip('\n')] if first else [])+sys.stdin.read().splitlines()
+if os.environ.get('SIMULATE_RELOAD'):
+    bind=next(arg for arg in sys.argv if arg.startswith('--bind=load:'))
+    command=bind.split('reload-sync:', 1)[1]
+    fresh=subprocess.check_output(command, shell=True, text=True, timeout=10).splitlines()
+    open(os.environ['RELOAD_RESULT'], 'w').write(json.dumps({'cached': rows, 'fresh': fresh}))
+    rows=fresh
+if os.environ.get('CANCEL_CACHED'):
+    raise SystemExit(130)
+print('')
+print('')
+for row in rows:
+    if row.split('\t')[1] == os.environ.get('CACHED_SELECT', 'git'):
+        print(row)
+""")
+
+    def test_cached_selector_rows_arrive_before_slow_brew_inventory(self):
+        self.cached_fzf()
+        result = self.root / 'first-row'
+        for action in ('install', 'remove', 'update'):
+            self.write_snapshot(action, [packages.Row('formula', 'git', '2.0', '2.2')])
+            with self.subTest(action=action), patch.dict(os.environ,
+                INVENTORY_DELAY='0.6', FIRST_ROW_RESULT=str(result), CANCEL_CACHED='1'
+            ):
+                code, _ = self.invoke(action)
+                self.assertEqual(code, 0)
+                self.assertNotEqual(result.read_text(), 'empty')
+                self.assertLess(float(result.read_text()), 0.25, 'cached rows waited for brew inventory')
+
+    def test_background_refresh_replaces_old_rows_and_keeps_cache_readonly_in_dry_run(self):
+        snapshot = self.write_snapshot('update', [packages.Row('formula', 'ghost', '1', '2')])
+        before = snapshot.read_bytes()
+        result = self.root / 'reload.json'
+        self.cached_fzf(reload=True)
+        with patch.dict(os.environ, SIMULATE_RELOAD='1', RELOAD_RESULT=str(result)):
+            code, output = self.invoke('update', '--dry-run')
+        self.assertEqual(code, 0)
+        recorded = json.loads(result.read_text())
+        self.assertTrue(any('ghost' in row for row in recorded['cached']))
+        self.assertFalse(any('ghost' in row for row in recorded['fresh']))
+        self.assertTrue(any('git' in row for row in recorded['fresh']))
+        self.assertIn('upgrade --formula git', output)
+        self.assertEqual(snapshot.read_bytes(), before)
+        self.assertEqual(self.mutations(), [])
+
+    def test_empty_background_snapshot_does_not_create_a_blank_selectable_row(self):
+        self.write_snapshot('remove', [packages.Row('formula', 'git', '1')])
+        result = self.root / 'reload.json'
+        self.cached_fzf()
+        with patch.dict(os.environ, SIMULATE_RELOAD='1', RELOAD_RESULT=str(result), BREW_INFO_JSON='{}'):
+            code, _ = self.invoke('remove', '--dry-run')
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(result.read_text())['fresh'], [])
+        self.assertEqual(self.mutations(), [])
+
+    def test_early_cached_selection_rechecks_removed_or_self_updated_apps(self):
+        self.cached_fzf()
+        for action, info in (
+            ('remove', {'casks': []}),
+            ('update', {'casks': [{'token': 'firefox', 'installed': '120.0', 'bundle_short_version': '122.0'}]}),
+            ('install', {'casks': []}),
+        ):
+            name = 'ghost' if action == 'install' else 'firefox'
+            self.write_snapshot(action, [packages.Row('cask', name, '120.0', '121.0')])
+            with self.subTest(action=action), patch.dict(os.environ,
+                INVENTORY_DELAY='0.3', CACHED_SELECT=name, BREW_INFO_JSON=json.dumps(info)
+            ):
+                code, output = self.invoke(action, '--yes')
+                self.assertEqual(code, 0)
+                self.assertNotIn('Plan:', output)
+                self.assertEqual(self.mutations(), [])
+
+    def test_early_accept_reuses_refresh_and_prints_current_version(self):
+        self.cached_fzf()
+        self.write_snapshot('remove', [packages.Row('formula', 'git', '0.1')])
+        with patch.dict(os.environ, INVENTORY_DELAY='0.3'):
+            code, output = self.invoke('remove', '--dry-run')
+        self.assertEqual(code, 0)
+        self.assertIn('2.0, 2.1', output)
+        inventory_calls = [call for call in self.calls() if call['args'][:2] == ['info', '--json=v2']]
+        self.assertEqual(len(inventory_calls), 1)
+        self.assertEqual(self.mutations(), [])
+
+    def test_failed_refresh_cannot_execute_cached_update(self):
+        self.cached_fzf()
+        self.write_snapshot('update', [packages.Row('formula', 'git', '1', '2')])
+        with patch.dict(os.environ, FAIL_COMMAND='outdated'):
+            code, _ = self.invoke('update', '--yes')
+        self.assertEqual(code, 7)
+        self.assertEqual(self.mutations(), [])
+
+    def test_invalid_or_mismatched_selector_snapshot_is_ignored(self):
+        opts = packages.parser().parse_intermixed_args(['remove'])
+        opts.sources = ['formula', 'cask']
+        queries = packages.Queries(str(self.brew), 2)
+        for change in ({'time': 0}, {'brew': '/different/brew'}, {'sources': ['formula']},
+                       {'rows': ['formula\t--zap\t1\t-']}, {'rows': ['formula\tgit\t-\t-']},
+                       {'rows': None}, {'time': float('nan')}):
+            snapshot = self.write_snapshot('remove', [packages.Row('formula', 'git', '1')])
+            payload = json.loads(snapshot.read_text())
+            payload.update(change)
+            snapshot.write_text(json.dumps(payload))
+            with self.subTest(change=change):
+                self.assertIsNone(packages.cached_selector(queries, opts))
+
+    def test_source_specific_snapshots_do_not_evict_combined_snapshot(self):
+        opts = packages.parser().parse_intermixed_args(['remove'])
+        queries = packages.Queries(str(self.brew), 2)
+        opts.sources = ['formula', 'cask']
+        combined = [packages.Row('formula', 'git', '1'), packages.Row('cask', 'firefox', '120')]
+        packages.save_selector(queries, opts, combined)
+        opts.sources = ['formula']
+        packages.save_selector(queries, opts, combined[:1])
+        self.assertEqual(packages.cached_selector(queries, opts), combined[:1])
+        opts.sources = ['formula', 'cask']
+        self.assertEqual(packages.cached_selector(queries, opts), combined)
 
     def test_install_list_filters_name_not_source_or_version_and_never_caches(self):
         code, output = self.invoke("install", "--list", "--exact", "git")
