@@ -75,7 +75,7 @@ class Row:
         source = text("工具", "CLI") if self.source == "formula" else text("应用", "App")
         current = clean(self.current) if self.current != "-" else text("未安装", "Not installed")
         name_width, version_width = widths or selector_widths(action)
-        columns = [cell(source, 6), cell(self.name, name_width, center=True), cell(current, version_width, right=True)]
+        columns = [cell(source, 6), cell(self.name, name_width), cell(current, version_width, right=True)]
         if action == "update":
             columns.append(cell(clean(self.target), version_width, right=True))
         return self.line() + "\t" + "\t".join(columns)
