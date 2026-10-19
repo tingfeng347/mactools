@@ -1,5 +1,8 @@
 """End-to-end CLI and isolated install/uninstall lifecycle tests."""
 import os
+import pty
+import re
+import select
 import subprocess
 import tempfile
 import unittest
@@ -26,6 +29,40 @@ class CLI(unittest.TestCase):
         result = self.invoke('no-such-command')
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn('Traceback', result.stderr)
+
+    def test_help_colors_only_in_supported_terminals(self):
+        plain = self.invoke('--help').stdout
+        self.assertNotIn('\033[', plain)
+        for lang in ('zh', 'en'):
+            for no_color, term, expected in (('', 'xterm-256color', True),
+                                             ('1', 'xterm-256color', False),
+                                             ('', 'dumb', False)):
+                with self.subTest(lang=lang, no_color=no_color, term=term):
+                    master, slave = pty.openpty()
+                    try:
+                        env = dict(self.env, MACTOOLS_LANG=lang, TERM=term, NO_COLOR=no_color)
+                        process = subprocess.Popen([str(ROOT / 'bin/ma')], env=env, stdout=slave,
+                                                   stderr=subprocess.PIPE)
+                        process.communicate(timeout=20)
+                        data = bytearray()
+                        while select.select([master], [], [], 0.2)[0]:
+                            try:
+                                chunk = os.read(master, 65536)
+                            except OSError:
+                                break
+                            if not chunk:
+                                break
+                            data.extend(chunk)
+                        output = data.decode().replace('\r\n', '\n')
+                        self.assertEqual(process.returncode, 0)
+                        self.assertEqual('\033[' in output, expected)
+                        plain_env = dict(env)
+                        comparison = subprocess.check_output([str(ROOT / 'bin/ma')], env=plain_env, text=True)
+                        self.assertEqual(re.sub(r'\033\[[0-9;]*m', '', output), comparison)
+                    finally:
+                        os.close(master)
+                        if slave is not None:
+                            os.close(slave)
 
     def test_language_persists_for_all_entries(self):
         self.assertEqual(self.invoke('setup', 'en').returncode, 0)

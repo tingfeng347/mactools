@@ -3,6 +3,7 @@
 
 import importlib
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -11,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mactools_runtime import atomic_write, config_dir, text
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 COMMANDS = {
     "install": "maci", "remove": "macr", "update": "macu", "doctor": "macd",
     "clean": "macc", "mirror": "macm", "ai": "maca",
@@ -29,7 +30,7 @@ def language():
 
 
 def help_text():
-    return text("""用法：ma <命令> [选项]
+    output = text("""用法：ma <命令> [选项]
 
   install   搜索并安装 Formula / Cask 软件 (maci)
   remove    搜索并卸载软件 (macr)
@@ -56,6 +57,24 @@ def help_text():
 
 Examples: ma install firefox; maci --formula wget; ma ai install --all --dry-run
 Run ma <command> --help for command help.""")
+    if not sys.stdout.isatty() or os.environ.get("TERM") == "dumb" or os.environ.get("NO_COLOR"):
+        return output
+
+    def paint(value, code):
+        return f"\033[{code}m{value}\033[0m"
+
+    lines = output.splitlines()
+    for index, line in enumerate(lines):
+        if index == 0:
+            lines[index] = paint(line, "1;36")
+        elif line.startswith("  "):
+            line = re.sub(r"^(  )(\w+)", lambda m: m[1] + paint(m[2], "1;32"), line)
+            lines[index] = re.sub(r"\((mac\w+)\)", lambda m: "(" + paint(m[1], "33") + ")", line)
+        elif line.startswith(("示例：", "Examples:")):
+            lines[index] = paint(line, "36")
+        elif line:
+            lines[index] = paint(line, "2")
+    return "\n".join(lines)
 
 
 def completion(shell):
