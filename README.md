@@ -209,10 +209,16 @@ macm test --mirror https://your-mirror.example/homebrew-bottles
 
 自定义地址需提供标准 Homebrew bottle 路径；自动切换还需在其 `/api` 下提供 Homebrew API。
 
-镜像切换写入专属片段 `~/.config/mactools/mirrors.sh`，不自动编辑 `.zshrc`。命令完成后会显示需要在当前终端执行的语句：
+镜像切换按当前 shell 写入专属片段：bash/zsh 使用 `~/.config/mactools/mirrors.sh`，fish 使用 `~/.config/mactools/mirrors.fish`，不自动编辑 shell 配置文件。命令完成后会显示需要在当前终端执行的 `source` 语句：
 
-```bash
+```sh
 source "$HOME/.config/mactools/mirrors.sh"
+```
+
+fish 使用：
+
+```fish
+source ~/.config/mactools/mirrors.fish
 ```
 
 需要新终端继续生效时，将该 `source` 语句加入自己的 shell 配置。备份默认保存在 `~/Library/Application Support/mactools`，遵循 `XDG_STATE_HOME`。`--config-dir` / `--state-dir` 可指定隔离目录。写入带锁，失败回滚；恢复校验备份与当前片段，发现手动修改时拒绝覆盖，除非显式传入 `--force`。

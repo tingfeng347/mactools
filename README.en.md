@@ -209,10 +209,16 @@ macm test --mirror https://your-mirror.example/homebrew-bottles
 
 Custom mirrors must provide standard Homebrew bottle paths. Automatic switching also requires Homebrew API endpoints under `/api`.
 
-Mirror switching writes a dedicated `~/.config/mactools/mirrors.sh` snippet without automatically editing `.zshrc`. After completion, the command displays what to run in your current terminal:
+Mirror switching writes a shell-specific snippet without editing shell startup files: bash/zsh use `~/.config/mactools/mirrors.sh`, and fish uses `~/.config/mactools/mirrors.fish`. After completion, the command displays the `source` command for your current terminal:
 
-```bash
+```sh
 source "$HOME/.config/mactools/mirrors.sh"
+```
+
+In fish:
+
+```fish
+source ~/.config/mactools/mirrors.fish
 ```
 
 Add this `source` line to your shell configuration to enable it in new terminals. Backups default to `~/Library/Application Support/mactools` and respect `XDG_STATE_HOME`. Use `--config-dir` and `--state-dir` for isolated directories. Writes are locked and rolled back on failure. Restore validates the backup and current snippet, refusing to overwrite manual edits unless `--force` is explicitly supplied.
