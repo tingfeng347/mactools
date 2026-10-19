@@ -29,7 +29,30 @@ ma ai install --all --dry-run
 
 ## 安装与卸载
 
-克隆项目并安装：
+推荐通过 Homebrew 安装，自动配置 Python 与 fzf 依赖：
+
+```bash
+brew install tingfeng347/tap/mactools
+```
+
+也可以先添加软件源，再安装：
+
+```bash
+brew tap tingfeng347/tap
+brew install mactools
+```
+
+Homebrew 安装的版本使用以下命令升级或卸载：
+
+```bash
+brew update
+brew upgrade mactools
+brew uninstall mactools
+```
+
+软件源：[tingfeng347/homebrew-tap](https://github.com/tingfeng347/homebrew-tap)。
+
+也可以克隆项目，使用脚本安装：
 
 ```bash
 git clone https://github.com/tingfeng347/mactools.git
@@ -44,7 +67,7 @@ bash install.sh
 curl -fsSL https://raw.githubusercontent.com/tingfeng347/mactools/main/install.sh | bash
 ```
 
-默认部署到 `~/.local/bin`，不需要 sudo。如果该目录不在 PATH 中，在当前终端执行，并按需添加到自己的 `~/.zshrc`：
+脚本安装默认部署到 `~/.local/bin`，不需要 sudo。如果该目录不在 PATH 中，在当前终端执行，并按需添加到自己的 `~/.zshrc`：
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
