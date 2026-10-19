@@ -218,6 +218,8 @@ class PackageTests(unittest.TestCase):
             self.invoke("install", "--dry-run")
         args = json.loads((self.root / "fzf.log").read_text().splitlines()[0])
         header = next(arg for arg in args if arg.startswith("--header="))
+        self.assertNotIn('Ctrl+A', header)
+        self.assertTrue(any('ctrl-a:select-all' in arg for arg in args if arg.startswith('--bind=')))
         self.assertNotIn("Fuzzy", header)
         self.assertNotIn("新版本", header)
         self.assertNotIn("安装软件", header)

@@ -361,7 +361,7 @@ def select(queries, opts):
                 "--height=95%", "--layout=reverse", "--border", "--tiebreak=index", "--info=hidden",
                 "--preview=" + preview, "--preview-window=right:42%:wrap:<50(down:35%:wrap)",
                 "--prompt=" + text("搜索 › ", "Search › "),
-                "--bind=tab:toggle+down,shift-tab:toggle+up,alt-j:last,alt-k:first,ctrl-/:toggle-preview",
+                "--bind=tab:toggle+down,shift-tab:toggle+up,ctrl-a:select-all,alt-j:last,alt-k:first,ctrl-/:toggle-preview",
                 "--header=" + header]
         if exact:
             argv.append("--exact")
