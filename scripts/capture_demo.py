@@ -2,9 +2,10 @@
 """Render recorded terminal sessions for README screenshots on macOS.
 
 Optional development dependencies: pip install pillow pyte
-Record in a 160-column, 35-row terminal from the repository root:
-    script -q .reference/help.typescript ./bin/ma --help
-    script -q .reference/install.typescript ./bin/maci --dry-run --cask --exact firefox
+Record in a 160-column, 32-row terminal from the repository root:
+    stty cols 160 rows 32
+    env -u NO_COLOR TERM=xterm-256color script -q .reference/help.typescript ./bin/ma --help
+    env -u NO_COLOR TERM=xterm-256color script -q .reference/install.typescript ./bin/maci --dry-run --cask --exact firefox
 Exit the selector with ESC after the preview loads. Then run:
     python scripts/capture_demo.py
 """
@@ -29,7 +30,8 @@ COLORS = {
 def recording(path, interactive=False):
     screen = pyte.Screen(COLS, ROWS)
     stream = pyte.Stream(screen)
-    data = path.read_text(errors='replace')
+    # Preserve CRLF: LF alone advances pyte's row without resetting its column.
+    data = path.read_bytes().decode('utf-8', errors='replace')
     # fzf clears its screen when exiting: render the last frame before cleanup.
     if interactive:
         marker = '\x1b[?1000l'
@@ -47,7 +49,7 @@ def color(value, default):
     return COLORS.get(value, '#' + value if len(value) == 6 else default)
 
 
-def render(screen, filename, command):
+def render(screen, filename, command, highlight_help=False):
     regular = ImageFont.truetype('/System/Library/Fonts/Menlo.ttc', 16)
     chinese = ImageFont.truetype('/System/Library/Fonts/PingFang.ttc', 16, index=2)
     cell_w, cell_h, padding, bar = 10, 23, 24, 48
@@ -68,6 +70,14 @@ def render(screen, filename, command):
             wide = unicodedata.east_asian_width(char.data[0]) in ('W', 'F')
             x, y = padding + column * cell_w, padding + bar + row * cell_h
             fg, bg = color(char.fg, '#d6deeb'), color(char.bg, '#10151d')
+            # Highlight the plain-text help's headings and command column.
+            if highlight_help and char.fg == 'default':
+                line = screen.display[row]
+                if line.startswith('  ') and line.strip():
+                    if 2 <= column < len(line) - len(line.lstrip()) + len(line.split()[0]):
+                        fg = COLORS['green']
+                elif line.strip():
+                    fg = COLORS['cyan']
             if char.reverse:
                 fg, bg = bg, fg
             draw.rectangle((x, y, x + cell_w * (2 if wide else 1) - 1,
@@ -78,7 +88,7 @@ def render(screen, filename, command):
 
 
 if __name__ == '__main__':
-    render(recording(ROOT / '.reference' / 'help.typescript'), 'commands.png', 'ma --help')
+    render(recording(ROOT / '.reference' / 'help.typescript'), 'commands.png', 'ma --help', highlight_help=True)
     render(recording(ROOT / '.reference' / 'install.typescript', interactive=True),
            'install.png', 'maci --cask --exact firefox  # dry-run demo')
     print('Saved docs/images/commands.png and docs/images/install.png')
