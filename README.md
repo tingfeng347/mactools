@@ -1,5 +1,7 @@
 # mactools
 
+**简体中文** | [English](README.en.md)
+
 [![CI](https://github.com/tingfeng347/mactools/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tingfeng347/mactools/actions/workflows/ci.yml)
 [![macOS](https://img.shields.io/badge/platform-macOS-111827?logo=apple&logoColor=white)](https://github.com/tingfeng347/mactools)
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
