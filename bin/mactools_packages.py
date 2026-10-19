@@ -33,9 +33,22 @@ def clean(value):
     return re.sub(r"[\x00-\x1f\x7f]", " ", str(value))
 
 
-def cell(value, width):
+def cell(value, width, right=False):
     used = sum(2 if unicodedata.east_asian_width(char) in ("W", "F") else 1 for char in value)
-    return value + " " * max(0, width - used)
+    padding = " " * max(0, width - used)
+    return padding + value if right else value + padding
+
+
+def selector_widths(action, terminal_width=None):
+    columns = terminal_width or shutil.get_terminal_size((120, 24)).columns
+    inner = max(40, columns - 4)
+    preview = int(inner * 0.42)
+    # Match fzf's right preview and its narrow-window fallback below.
+    available = inner - preview - 4 if preview >= 50 else inner - 4
+    version_columns = 2 if action == "update" else 1
+    version_width = 18
+    name_width = max(20, available - 6 - version_columns * version_width - (version_columns + 1))
+    return name_width, version_width
 
 
 def package_name(value):
@@ -54,14 +67,14 @@ class Row:
     def line(self):
         return "\t".join((self.source, self.name, clean(self.current), clean(self.target)))
 
-    def selector_line(self, action):
+    def selector_line(self, action, widths=None):
         # Keep canonical fields hidden for preview commands and selection validation.
         source = text("工具", "CLI") if self.source == "formula" else text("应用", "App")
         current = clean(self.current) if self.current != "-" else text("未安装", "Not installed")
-        columns = [cell(source, 6), cell(self.name, 32), current]
+        name_width, version_width = widths or selector_widths(action)
+        columns = [cell(source, 6), cell(self.name, name_width), cell(current, version_width, right=True)]
         if action == "update":
-            columns[-1] = cell(current, 22)
-            columns.append(clean(self.target))
+            columns.append(cell(clean(self.target), version_width, right=True))
         return self.line() + "\t" + "\t".join(columns)
 
     @classmethod
@@ -254,12 +267,14 @@ def select(queries, opts):
         raise ValueError(text("未找到 fzf，请先运行 brew install fzf", "fzf not found. Run brew install fzf first"))
     query, exact = " ".join(opts.query), opts.exact
     while True:
+        widths = selector_widths(opts.action)
+        name_width, version_width = widths
         preview = shlex.join([sys.executable, str(Path(__file__).resolve()), "--preview", queries.brew, str(opts.timeout)]) + " {1} {2}"
-        headings = cell(text("类型", "Type"), 6) + " " + cell(text("名称", "Name"), 32) + " "
+        headings = cell(text("类型", "Type"), 6) + " " + cell(text("名称", "Name"), name_width) + " "
         installed_heading = text("已安装版本", "Installed version")
-        headings += cell(installed_heading, 22) if opts.action == "update" else installed_heading
+        headings += cell(installed_heading, version_width, right=True)
         if opts.action == "update":
-            headings += " " + text("可更新至", "Available version")
+            headings += " " + cell(text("可更新至", "Available version"), version_width, right=True)
         header = text("Tab 多选  Enter 确认  Ctrl+R 刷新  Ctrl+E 匹配  Ctrl+/ 详情  Esc 退出", "Tab select  Enter confirm  Ctrl+R refresh  Ctrl+E match  Ctrl+/ details  Esc exit") + "\n\n" + headings
         argv = [fzf, "--multi", "--delimiter=\t", "--nth=2", "--with-nth=5..", "--tabstop=1",
                 "--print-query", "--expect=ctrl-e,ctrl-r", "--query=" + query,
@@ -282,7 +297,7 @@ def select(queries, opts):
             try:
                 for row in rows(queries, opts):
                     emitted[(row.source, row.name)] = row
-                    process.stdin.write(row.selector_line(opts.action) + "\n")
+                    process.stdin.write(row.selector_line(opts.action, widths) + "\n")
                     process.stdin.flush()
             except BrokenPipeError:
                 pass
@@ -331,7 +346,7 @@ def select(queries, opts):
         for line in fields[2:]:
             row = Row.parse(line)
             actual = emitted.get((row.source, row.name))
-            if actual is None or actual.selector_line(opts.action) != line:
+            if actual is None or actual.selector_line(opts.action, widths) != line:
                 raise ValueError("Unknown package selection")
             if actual not in selected:
                 selected.append(actual)

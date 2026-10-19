@@ -226,6 +226,14 @@ class PackageTests(unittest.TestCase):
         self.assertGreaterEqual(header.count("\n"), 2)
         self.assertIn("--with-nth=5..", args)
         self.assertIn("--preview-window=right:42%:wrap:<50(down:35%:wrap)", args)
+        for terminal_width in (160, 200):
+            widths = packages.selector_widths("install", terminal_width)
+            self.assertGreater(widths[0], 32)
+            short = packages.Row("formula", "fish", "4.9.3").selector_line("install", widths).split("\t")[4:]
+            long = packages.Row("cask", "font-big-shoulders-stencil-display-sc").selector_line("install", widths).split("\t")[4:]
+            self.assertEqual(len(short[1]), len(long[1]))
+            self.assertTrue(short[2].endswith("4.9.3"))
+            self.assertTrue(short[2].startswith(" "))
 
     def test_chinese_preview_uses_localized_metadata_labels(self):
         with patch.dict(os.environ, {"MACTOOLS_LANG": "zh"}), contextlib.redirect_stdout(io.StringIO()) as output:
