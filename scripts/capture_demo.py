@@ -88,7 +88,7 @@ def render(screen, filename, command, highlight_help=False):
 
 
 if __name__ == '__main__':
-    render(recording(ROOT / '.reference' / 'help.typescript'), 'commands.png', 'ma --help', highlight_help=True)
+    render(recording(ROOT / '.reference' / 'help.typescript'), 'commands-color.png', 'ma --help', highlight_help=True)
     render(recording(ROOT / '.reference' / 'install.typescript', interactive=True),
-           'install.png', 'maci --cask --exact firefox  # dry-run demo')
-    print('Saved docs/images/commands.png and docs/images/install.png')
+           'install-color.png', 'maci --cask --exact firefox  # dry-run demo')
+    print('Saved docs/images/commands-color.png and docs/images/install-color.png')

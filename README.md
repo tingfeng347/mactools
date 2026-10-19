@@ -21,11 +21,11 @@ ma ai install --all --dry-run
 
 搜索、选择与软件详情：名称表头居中、软件名左对齐、版本靠右，`Tab` 多选，`Ctrl+/` 收起或展开详情。
 
-![maci 搜索 Firefox，并在右侧预览 Homebrew 软件详情](docs/images/install.png)
+![maci 搜索 Firefox，并在右侧预览 Homebrew 软件详情](docs/images/install-color.png)
 
 完整命令和快捷入口：
 
-![ma 帮助界面，展示七项功能及对应缩写](docs/images/commands.png)
+![ma 帮助界面，展示七项功能及对应缩写](docs/images/commands-color.png)
 
 ## 安装与卸载
 
