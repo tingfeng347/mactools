@@ -168,6 +168,8 @@ macu --refresh-index        # 先确认并执行 brew update，再查看更新
 
 包查询默认每项超时 15 秒，可用 `--timeout 30` 调整。仅显式 `ma update --refresh-index` 会刷新 Homebrew 索引；它不能与 `--list` / `--dry-run` 组合。
 
+Cask 的已安装版本优先采用应用自身的版本，无法读取时回退到 Homebrew 安装记录。详情分别列出当前版本、Homebrew 安装记录、Homebrew 可用版本和 tap 来源。应用自更新后，`macu` 会跳过能明确判定为相同或较旧的 Homebrew 版本；带构建号时也会核对构建号，无法可靠比较的格式继续沿用 Homebrew 的更新判断。这里的可用版本属于 Homebrew 渠道，可能落后于应用内更新。
+
 ## 诊断与清理
 
 ```bash

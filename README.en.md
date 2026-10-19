@@ -168,6 +168,8 @@ Lists load in the background. The name catalog is cached for one hour; existing 
 
 Package queries time out after 15 seconds per request by default; adjust with `--timeout 30`. Only an explicit `ma update --refresh-index` refreshes the Homebrew index. It cannot be combined with `--list` or `--dry-run`.
 
+Installed Cask versions prefer the application's own version, falling back to the Homebrew installation record when unavailable. Details separate the installed version, Homebrew record, Homebrew available version and tap. After an app updates itself, `macu` skips Homebrew versions confidently identified as equal or older. Build-qualified versions also check build numbers; formats that cannot be compared reliably retain Homebrew's update decision. Homebrew availability may lag behind the app's own updater.
+
 ## Diagnostics and cleanup
 
 ```bash
