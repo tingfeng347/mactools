@@ -93,13 +93,15 @@ class Queries:
         try:
             os.killpg(process.pid, signal.SIGTERM)
             process.wait(timeout=0.3)
-        except subprocess.TimeoutExpired:
+        except (subprocess.TimeoutExpired, ProcessLookupError):
+            pass
+        finally:
+            # A wrapper may exit before children that still hold stdout/stderr.
+            # Kill the remaining group before communicate() drains those pipes.
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-        except ProcessLookupError:
-            pass
 
     def close(self):
         with self.lock:
@@ -115,20 +117,53 @@ def versions(value):
     return clean(value) if value else "-"
 
 
+def inventory_items(data, key):
+    if not isinstance(data, dict):
+        raise ValueError("Invalid Homebrew JSON inventory")
+    items = data.get(key, [])
+    if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+        raise ValueError("Invalid Homebrew JSON inventory: " + key)
+    return items
+
+
+def cached_catalog(path, brew):
+    try:
+        payload = json.loads(path.read_text())
+        if not isinstance(payload, dict) or payload.get("brew") != brew:
+            return None
+        names, timestamp = payload["names"], payload["time"]
+        if not isinstance(names, list) or not isinstance(timestamp, (int, float)) or not math.isfinite(timestamp):
+            return None
+        return [package_name(name) for name in names], timestamp
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+
+
 def json_inventory(queries, action, sources):
     raw = queries.capture("outdated", "--json=v2") if action == "update" else queries.capture("info", "--json=v2", "--installed")
     data = json.loads(raw)
     if not isinstance(data, dict):
         raise ValueError("Invalid Homebrew JSON inventory")
+    cask_names = {}
+    if action == "update" and "cask" in sources and data.get("casks"):
+        # Outdated JSON emits cask short tokens. Keep the installed tap identity
+        # so an identically named cask in another tap cannot be upgraded instead.
+        inventory = json.loads(queries.capture("info", "--json=v2", "--installed"))
+        for item in inventory_items(inventory, "casks"):
+            token = item.get("token")
+            if token:
+                token = package_name(token)
+                cask_names[token] = item.get("full_token") or token
     result = []
     for source, key in (("formula", "formulae"), ("cask", "casks")):
         if source not in sources:
             continue
-        for item in data.get(key, []):
+        for item in inventory_items(data, key):
             if source == "formula":
                 name = item.get("full_name") or item.get("name")
             else:
                 name = item.get("full_token") or item.get("token") or item.get("name")
+                name = cask_names.get(package_name(name), name)
             current = versions(item.get("installed_versions") if action == "update" else item.get("installed"))
             target = clean(item.get("current_version") or "-") if action == "update" else "-"
             result.append(Row(source, package_name(name), current, target))
@@ -138,15 +173,10 @@ def json_inventory(queries, action, sources):
 def catalog(queries, source, refresh=False, writable=True):
     """Cache names only: installation state is always queried live, never cached."""
     path = cache_dir() / ("packages-" + source + ".json")
-    cached = None
-    try:
-        payload = json.loads(path.read_text())
-        if payload.get("brew") == queries.brew:
-            cached = [package_name(name) for name in payload["names"]]
-            if not refresh and time.time() - payload["time"] < CACHE_SECONDS:
-                return cached
-    except (OSError, ValueError, TypeError, KeyError):
-        cached = None
+    payload = cached_catalog(path, queries.brew)
+    cached = payload[0] if payload is not None else None
+    if payload is not None and not refresh and time.time() - payload[1] < CACHE_SECONDS:
+        return cached
     try:
         names = sorted(set(package_name(n) for n in queries.capture("formulae" if source == "formula" else "casks").splitlines() if n.strip()))
     except (BrewError, ValueError):
@@ -170,13 +200,10 @@ def rows(queries, opts):
     # Emit even expired cached names first; refreshes prepare this and future runs.
     if not opts.refresh:
         for source in opts.sources:
-            try:
-                payload = json.loads((cache_dir() / ("packages-" + source + ".json")).read_text())
-                if payload.get("brew") != queries.brew:
-                    continue
-                names = [package_name(name) for name in payload["names"]]
-            except (OSError, ValueError, TypeError, KeyError):
+            payload = cached_catalog(cache_dir() / ("packages-" + source + ".json"), queries.brew)
+            if payload is None:
                 continue
+            names = payload[0]
             for name in names:
                 if (source, name) not in known:
                     row = Row(source, name)
@@ -250,6 +277,7 @@ def select(queries, opts):
         worker.start()
         try:
             output = process.stdout.read()
+            process.stdout.close()
             status = process.wait()
         finally:
             queries.close()

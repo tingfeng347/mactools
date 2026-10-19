@@ -5,6 +5,8 @@ import json
 import os
 from pathlib import Path
 import sys
+import shutil
+import subprocess
 import tempfile
 import time
 import unittest
@@ -13,15 +15,20 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bin"))
 import mactools_packages as packages
 
+REAL_FZF = shutil.which("fzf")
+
 
 BREW = r'''
-import json, os, sys, time
+import json, os, signal, subprocess, sys, time
 args = sys.argv[1:]
 with open(os.environ["BREW_LOG"], "a") as f:
     f.write(json.dumps({"args": args, "auto": os.getenv("HOMEBREW_NO_AUTO_UPDATE")}) + "\n")
 if os.environ.get("FAIL_COMMAND") == args[0]:
     print("stub brew failure", file=sys.stderr)
     sys.exit(7)
+if os.environ.get("SLOW_CHILD_COMMAND") == args[0]:
+    subprocess.Popen([sys.executable, "-c", "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(10)"])
+    time.sleep(10)
 if os.environ.get("SLOW_COMMAND") == args[0]:
     time.sleep(10)
 if args[0] == "formulae":
@@ -29,7 +36,7 @@ if args[0] == "formulae":
 elif args[0] == "casks":
     print("firefox\ngit-client\n")
 elif args[:2] == ["info", "--json=v2"]:
-    print(json.dumps({"formulae": [{"name": "git", "full_name": "git", "installed": [{"version": "2.0"}, {"version": "2.1"}]}], "casks": [{"token": "firefox", "installed": "120.0"}]}))
+    print(json.dumps({"formulae": [{"name": "git", "full_name": "git", "installed": [{"version": "2.0"}, {"version": "2.1"}]}], "casks": [{"token": "firefox", "full_token": os.environ.get("CASK_FULL_TOKEN", "firefox"), "installed": "120.0"}]}))
 elif args[0] == "outdated":
     print(json.dumps({"formulae": [{"name": "git", "installed_versions": ["2.1"], "current_version": "2.2"}], "casks": [{"name": "firefox", "installed_versions": ["120.0"], "current_version": "121.0"}]}))
 elif args[0] == "info":
@@ -204,6 +211,66 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(packages.preview([str(self.brew), "2", "cask", "firefox"]), 0)
         self.assertIn("Package metadata", output.getvalue())
         self.assertEqual(self.calls()[-1]["args"], ["info", "--cask", "firefox"])
+
+    def test_malformed_cache_is_ignored_and_refreshed(self):
+        queries = packages.Queries(str(self.brew), 2)
+        self.addCleanup(queries.close)
+        cache = packages.cache_dir() / "packages-formula.json"
+        cache.parent.mkdir(parents=True)
+        payloads = [[], None, {}, {"brew": str(self.brew), "names": "fzf", "time": 1}, {"brew": str(self.brew), "names": [], "time": "bad"}, {"brew": str(self.brew), "names": ["../bad"], "time": 1}]
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                cache.write_text(json.dumps(payload))
+                with patch.object(queries, "capture", return_value="fzf\n"):
+                    self.assertEqual(packages.catalog(queries, "formula", writable=False), ["fzf"])
+        cache.write_text("[]")
+        opts = packages.parser().parse_intermixed_args(["install", "--formula", "--dry-run"])
+        opts.sources = ["formula"]
+        with patch.object(queries, "capture", side_effect=lambda *args: '{"formulae": [], "casks": []}' if args[0] == "info" else "fzf\n"):
+            self.assertEqual(list(packages.rows(queries, opts)), [packages.Row("formula", "fzf")])
+
+    def test_malformed_inventory_has_clear_validation_error(self):
+        queries = packages.Queries(str(self.brew), 2)
+        self.addCleanup(queries.close)
+        for payload in ([], None, {"formulae": None}, {"formulae": ["bad"]}, {"casks": [None]}):
+            with self.subTest(payload=payload), patch.object(queries, "capture", return_value=json.dumps(payload)):
+                with self.assertRaisesRegex(ValueError, "Invalid Homebrew JSON inventory"):
+                    packages.json_inventory(queries, "remove", ["formula", "cask"])
+
+    def test_tapped_cask_update_keeps_installed_identity(self):
+        with patch.dict(os.environ, {"CASK_FULL_TOKEN": "owner/apps/firefox", "FZF_SELECT": "owner/apps/firefox"}):
+            code, output = self.invoke("update", "--cask", "--yes")
+        self.assertEqual(code, 0)
+        self.assertIn("owner/apps/firefox", output)
+        self.assertEqual(self.mutations(), [["upgrade", "--cask", "owner/apps/firefox"]])
+
+    def test_ui_can_select_installed_row_without_waiting_for_catalog(self):
+        self.fzf.write_text("#!" + sys.executable + "\nimport sys\nrow=sys.stdin.readline().strip()\nprint('\\n\\n'+row)\n")
+        with patch.dict(os.environ, {"SLOW_COMMAND": "formulae"}):
+            started = time.monotonic()
+            code, output = self.invoke("install", "--formula", "--dry-run", "--timeout", "5")
+        self.assertEqual(code, 0)
+        self.assertIn("install --formula git", output)
+        self.assertLess(time.monotonic() - started, 3)
+        self.assertEqual(self.mutations(), [])
+
+    def test_timeout_also_stops_children_holding_query_pipes(self):
+        with patch.dict(os.environ, {"SLOW_CHILD_COMMAND": "outdated"}):
+            started = time.monotonic()
+            self.assertEqual(self.invoke("update", "--list", "--timeout", "0.15")[0], 124)
+            self.assertLess(time.monotonic() - started, 2)
+
+    @unittest.skipUnless(REAL_FZF, "host fzf unavailable")
+    def test_real_fzf_searches_only_package_name_and_exact_toggle(self):
+        rows = "formula\tgit\t1\t2\nformula\tg-i-t\t1\t2\nformula\tother\tgit\tgit\n"
+        env = dict(os.environ)
+        env.pop("FZF_DEFAULT_OPTS", None)
+        env.pop("FZF_DEFAULT_OPTS_FILE", None)
+        argv = [REAL_FZF, "--multi", "--delimiter=\t", "--nth=2", "--with-nth=1,2,3,4", "--filter=git"]
+        fuzzy = subprocess.run(argv, input=rows, text=True, capture_output=True, env=env, check=True)
+        exact = subprocess.run(argv + ["--exact"], input=rows, text=True, capture_output=True, env=env, check=True)
+        self.assertEqual({line.split("\t")[1] for line in fuzzy.stdout.splitlines()}, {"git", "g-i-t"})
+        self.assertEqual({line.split("\t")[1] for line in exact.stdout.splitlines()}, {"git"})
 
     def test_selection_and_timeout_validation(self):
         for value in ("nan", "inf", "0", "-1"):
