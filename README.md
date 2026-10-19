@@ -1,5 +1,11 @@
 # mactools
 
+[![CI](https://github.com/tingfeng347/mactools/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tingfeng347/mactools/actions/workflows/ci.yml)
+[![macOS](https://img.shields.io/badge/platform-macOS-111827?logo=apple&logoColor=white)](https://github.com/tingfeng347/mactools)
+[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Bash 3.2+](https://img.shields.io/badge/Bash-3.2%2B-4EAA25?logo=gnubash&logoColor=white)](https://www.gnu.org/software/bash/)
+[![Homebrew](https://img.shields.io/badge/packages-Homebrew-FBB040?logo=homebrew&logoColor=black)](https://brew.sh/)
+
 macOS 终端工具集，移植自 [ubtools](https://github.com/tingfeng347/ubtools)。使用 `ma + 动作` 管理 Homebrew Formula / Cask、诊断环境、清理空间、选择镜像和管理 AI 编程工具。
 
 ```bash
@@ -25,11 +31,19 @@ ma ai install --all --dry-run
 
 ## 安装与卸载
 
-在项目目录内运行：
+克隆项目并安装：
 
 ```bash
+git clone https://github.com/tingfeng347/mactools.git
+cd mactools
 brew install python fzf       # 已安装时可跳过
 bash install.sh
+```
+
+已有 Homebrew、Python 3.9+ 和 fzf 时，也可以一行安装：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tingfeng347/mactools/main/install.sh | bash
 ```
 
 默认部署到 `~/.local/bin`，不需要 sudo。如果该目录不在 PATH 中，在当前终端执行，并按需添加到自己的 `~/.zshrc`：
@@ -57,7 +71,7 @@ bash uninstall.sh --bin-dir "$HOME/bin"
 
 卸载只删除 mactools 自己的入口和模块；保留应用、依赖、AI 登录与会话、语言设置、镜像片段和镜像备份。`--purge-cache` 仅额外删除当前用户的 mactools 缓存。
 
-安装脚本也支持独立下载模式，按 GitHub Raw、jsDelivr 顺序尝试；**新项目尚未发布到 GitHub 时，请使用上面的本地安装方式**。下载地址可以用 `MACTOOLS_DOWNLOAD_BASES` 指定（空格分隔）。
+安装脚本的独立下载模式按 GitHub Raw、jsDelivr 顺序尝试，完整下载并检查后再部署。下载地址可以用 `MACTOOLS_DOWNLOAD_BASES` 指定（空格分隔）。
 
 ## 完整命令与缩写
 
@@ -213,12 +227,12 @@ ma completion fish | source
 
 ## 移植与验证
 
-本项目按三个功能分支并行开发，再由独立 agent 审查与合并。规格与功能对应见 [移植规格](docs/PORTING.md)，审查记录见 [审查报告](docs/REVIEW.md)。原始参考源码在本项目 `.reference/ubtools`，并行开发工作目录在 `.worktrees`，这两个目录不提交。
+本项目按三个功能分支并行开发，再由独立 agent 审查与合并。规格与功能对应见 [移植规格](docs/PORTING.md)，初次集成审查记录见 [审查报告](docs/REVIEW.md)。开发时的原始参考源码位于本地 `.reference/ubtools`，并行工作目录位于 `.worktrees`；两个目录都不包含在公开仓库中。
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
 
-测试使用临时目录、假包管理器、本地 HTTP 服务和伪终端；不会安装、更新或卸载宿主机上的实际软件。CI 配置在 macOS 和 Linux 上分别验证 Python 3.9 / 3.13，安装器生命周期测试仅在 macOS 运行。
+测试使用临时目录、假包管理器、本地 HTTP 服务和伪终端；不会安装、更新或卸载宿主机上的实际软件。发布前本地完整测试通过 101 项，覆盖真实 fzf 的名称过滤和清理绑定。CI 在 macOS 和 Linux 上分别验证 Python 3.9 / 3.13，安装器生命周期测试仅在 macOS 运行；远端结果见顶部 CI 徽章。
 
 参考源固定为 ubtools `e2a05261f07207590b3065fa447641c32b4afe0f`。macOS 适配依据：[Homebrew 命令文档](https://docs.brew.sh/Manpage)、[Homebrew JSON 接口](https://docs.brew.sh/Querying-Brew)、[清华 bottle 镜像](https://mirrors.tuna.tsinghua.edu.cn/help/homebrew-bottles/)、[中科大 bottle 镜像](https://mirrors.ustc.edu.cn/help/homebrew-bottles.html)。
