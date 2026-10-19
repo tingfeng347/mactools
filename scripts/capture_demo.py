@@ -5,7 +5,7 @@ Optional development dependencies: pip install pillow pyte
 Record in a 160-column, 32-row terminal from the repository root:
     stty cols 160 rows 32
     env -u NO_COLOR TERM=xterm-256color script -q .reference/help.typescript ./bin/ma --help
-    env -u NO_COLOR TERM=xterm-256color script -q .reference/install.typescript ./bin/maci --dry-run --cask --exact firefox
+    env -u NO_COLOR TERM=xterm-256color script -q .reference/install.typescript ./bin/maci --dry-run --formula --exact fish
     env -u NO_COLOR TERM=xterm-256color script -q .reference/ai.typescript ./bin/maca install --dry-run
 Exit each selector with ESC after the preview loads. Then run:
     python scripts/capture_demo.py
@@ -83,7 +83,7 @@ def render(screen, filename, command):
 if __name__ == '__main__':
     render(recording(ROOT / '.reference' / 'help.typescript'), 'commands-color.png', 'ma --help')
     render(recording(ROOT / '.reference' / 'install.typescript', interactive=True),
-           'install-sources.png', 'maci --cask --exact firefox  # dry-run demo')
+           'install-status.png', 'maci --formula --exact fish  # dry-run demo')
     if (ROOT / '.reference' / 'ai.typescript').exists():
         render(recording(ROOT / '.reference' / 'ai.typescript', interactive=True),
                'ai-color.png', 'ma ai')

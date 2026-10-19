@@ -29,9 +29,9 @@ ma ai install --all --dry-run
 
 ## 界面演示
 
-搜索、选择与软件详情：蓝色标识为 Homebrew 官方源，紫色标识为第三方 tap；类型显示 `formula` / `cask`。名称表头居中、软件名左对齐、版本靠右，`Tab` 多选，`Ctrl+/` 收起或展开详情。
+搜索、选择与软件详情：蓝色标识为 Homebrew 官方源，紫色标识为第三方 tap；类型显示 `formula` / `cask`；名称为白色，已安装版本右侧显示绿色 `✓`。名称表头居中、软件名左对齐、版本靠右，`Tab` 多选，`Ctrl+/` 收起或展开详情。
 
-![maci 搜索 Firefox，并在右侧预览 Homebrew 软件详情](docs/images/install-sources.png)
+![maci 搜索 Firefox，并在右侧预览 Homebrew 软件详情](docs/images/install-status.png)
 
 完整命令和快捷入口：
 
