@@ -156,6 +156,18 @@ class MirrorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
             mirror.restore(self.args)
 
+    def test_malformed_backup_schema_clear_error(self):
+        mirror.apply(self.args, self.url)
+        manifest = self.root / 'state' / 'mirror-backup.json'
+        target = self.root / 'config' / 'mirrors.sh'
+        original = target.read_bytes()
+        for payload in ([], None, {}, {'version': 1}):
+            with self.subTest(payload=payload):
+                manifest.write_text(json.dumps(payload))
+                with self.assertRaisesRegex(ValueError, 'manifest schema'):
+                    mirror.restore(self.args)
+                self.assertEqual(target.read_bytes(), original)
+
     def test_bad_urls_rejected(self):
         for value in ('file:///tmp/a', 'https://user:pass@host/path', 'https://host/a?b=1', 'https://host/a\nexport X=1'):
             with self.assertRaises(ValueError):
@@ -175,6 +187,13 @@ class MirrorTests(unittest.TestCase):
         with patch.object(mirror, 'benchmark', return_value=results), patch.object(mirror, 'fetch', return_value=b'{}'), patch.object(mirror, 'apply', side_effect=AssertionError('invalid API must not apply')), contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaisesRegex(ValueError, 'API validation failed'):
                 mirror.main(['auto'])
+
+    def test_null_api_schema_is_clear_error(self):
+        results = [{'url': self.url + '/good', 'name': 'local', 'ok': True, 'sha256': mirror.digest(PAYLOAD)}]
+        for payload in (b'null', b'[]', b'{"bottle":null}'):
+            with patch.object(mirror, 'benchmark', return_value=results), patch.object(mirror, 'fetch', return_value=payload):
+                with self.assertRaisesRegex(ValueError, 'API validation failed'):
+                    mirror.main(['auto'])
 
     def test_auto_preview_with_local_server_is_read_only(self):
         with patch.object(mirror, 'reference', return_value=self.sample), contextlib.redirect_stdout(io.StringIO()) as output:

@@ -214,6 +214,13 @@ def restore(args):
         safe_file(target)
         safe_file(manifest)
         data = json.loads(manifest.read_bytes())
+        required = {'version', 'path', 'original', 'original_sha256', 'mode', 'applied_sha256'}
+        if not isinstance(data, dict) or not required.issubset(data):
+            raise ValueError('Invalid mirror backup manifest schema')
+        if data['original'] is not None and not isinstance(data['original'], str):
+            raise ValueError('Invalid mirror backup original data')
+        if not isinstance(data['applied_sha256'], str) or not re.fullmatch(r'[a-f0-9]{64}', data['applied_sha256']):
+            raise ValueError('Invalid mirror backup applied checksum')
         if data.get('version') != 1 or data.get('path') != str(target):
             raise ValueError('Backup belongs to a different config path')
         original = None if data['original'] is None else base64.b64decode(data['original'], validate=True)

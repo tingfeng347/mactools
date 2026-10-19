@@ -36,7 +36,7 @@ def doctor(args):
             report(status, label, started, (result.stdout or result.stderr).strip()[:300].replace('\n', '; '))
             return result if result.returncode == 0 else None
         except (OSError, subprocess.TimeoutExpired) as exc:
-            report('WARN' if warn else 'FAIL', label, started, str(exc))
+            report('FAIL', label, started, str(exc))
             return None
 
     print(text('mactools 环境诊断（状态 / 检查 / 耗时 / 说明）', 'mactools diagnostics (status / check / duration / detail)'))

@@ -39,6 +39,15 @@ class SystemTests(unittest.TestCase):
         self.assertIn('FAIL', output.getvalue())
         self.assertIn('SKIP Remote connectivity', output.getvalue())
 
+    def test_only_brew_doctor_timeout_is_failure(self):
+        def run(argv, **kwargs):
+            if argv[1:2] == ['doctor']:
+                raise subprocess.TimeoutExpired(argv, 0.01)
+            return self.fake_run(argv, **kwargs)
+        with patch.object(system, 'brew_path', return_value='/stub/brew'), patch.object(system, 'run', side_effect=run), contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(system.main(['doctor', '--offline']), 1)
+        self.assertIn('FAIL Homebrew doctor', output.getvalue())
+
     def test_clean_list_is_read_only(self):
         with patch.object(system, 'brew_path', return_value='/stub/brew'), patch.object(system, 'run', side_effect=self.fake_run), contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(system.main(['clean', '--list', '--cask']), 0)
