@@ -289,6 +289,69 @@ class PackageTests(unittest.TestCase):
         self.assertTrue(current.endswith('… ✓'))
         self.assertEqual(packages.Row.parse(line), row)
 
+    def cask_fixture(self, actual='4.0.10', target='4.0.15'):
+        installed = {'token': 'cc-switch', 'full_token': 'owner/apps/cc-switch',
+                     'installed': '3.19.2', 'bundle_short_version': actual,
+                     'bundle_version': '40010', 'version': target, 'tap': 'owner/apps'}
+        outdated = {'name': 'cc-switch', 'installed_versions': ['3.19.2'], 'current_version': target}
+        return installed, outdated
+
+    def test_cask_inventory_uses_actual_bundle_version_for_install_and_remove(self):
+        item, _ = self.cask_fixture()
+        queries = packages.Queries(str(self.brew), 2)
+        for action in ('install', 'remove'):
+            with patch.object(queries, 'capture', return_value=json.dumps({'casks': [item]})):
+                self.assertEqual(packages.json_inventory(queries, action, ['cask']),
+                                 [packages.Row('cask', 'owner/apps/cc-switch', '4.0.10')])
+
+    def test_cask_updates_join_actual_versions_and_preserve_tap(self):
+        item, outdated = self.cask_fixture()
+        queries = packages.Queries(str(self.brew), 2)
+        with patch.object(queries, 'capture', side_effect=[json.dumps({'casks': [outdated]}), json.dumps({'casks': [item]})]):
+            self.assertEqual(packages.json_inventory(queries, 'update', ['cask']),
+                             [packages.Row('cask', 'owner/apps/cc-switch', '4.0.10', '4.0.15')])
+
+    def test_self_updated_casks_are_not_offered_older_or_equal_brew_versions(self):
+        queries = packages.Queries(str(self.brew), 2)
+        for actual in ('4.0.15', '4.0.15.0', '4.0.16'):
+            item, outdated = self.cask_fixture(actual=actual)
+            with self.subTest(actual=actual), patch.object(queries, 'capture', side_effect=[
+                json.dumps({'casks': [outdated]}), json.dumps({'casks': [item]})
+            ]):
+                self.assertEqual(packages.json_inventory(queries, 'update', ['cask']), [])
+
+    def test_cask_version_fallback_and_build_comparisons_are_conservative(self):
+        item, _ = self.cask_fixture()
+        item.pop('bundle_short_version')
+        self.assertEqual(packages.cask_installed_version(item), '3.19.2')
+        self.assertFalse(packages.cask_already_current(item, '4.0.15'))
+        item.pop('bundle_version')
+        self.assertEqual(packages.cask_installed_version(item), '3.19.2')
+        item['bundle_short_version'] = '4.0.16-beta'
+        self.assertFalse(packages.cask_already_current(item, '4.0.15'))
+        item['bundle_short_version'] = '4.0.15'
+        self.assertFalse(packages.cask_already_current(item, '4.0.15,123'))
+        item['bundle_version'] = '124'
+        self.assertTrue(packages.cask_already_current(item, '4.0.15,123'))
+        item['bundle_version'] = '122'
+        self.assertFalse(packages.cask_already_current(item, '4.0.15,123'))
+        item['installed'] = None
+        self.assertEqual(packages.cask_installed_version(item), '-')
+        self.assertFalse(packages.cask_already_current(item, '4.0.15'))
+
+    def test_cask_preview_separates_actual_version_record_and_brew_channel(self):
+        item, _ = self.cask_fixture()
+        for lang in ('zh', 'en'):
+            with patch.dict(os.environ, MACTOOLS_LANG=lang), patch.object(
+                packages.Queries, 'capture', return_value=json.dumps({'casks': [item]})
+            ), contextlib.redirect_stdout(io.StringIO()) as output:
+                packages.preview([str(self.brew), '2', 'cask', 'owner/apps/cc-switch'])
+            preview = output.getvalue()
+            for value in ('4.0.10', '3.19.2', '4.0.15', 'owner/apps'):
+                self.assertIn(value, preview)
+            self.assertIn('Homebrew installation record' if lang == 'en' else 'Homebrew 安装记录', preview)
+            self.assertIn('Homebrew available version' if lang == 'en' else 'Homebrew 可用版本', preview)
+
     def test_chinese_preview_uses_localized_metadata_labels(self):
         with patch.dict(os.environ, {"MACTOOLS_LANG": "zh"}), contextlib.redirect_stdout(io.StringIO()) as output:
             packages.preview([str(self.brew), "2", "formula", "git"])

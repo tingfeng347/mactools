@@ -178,6 +178,44 @@ def versions(value):
     return clean(value) if value else "-"
 
 
+def cask_installed_version(item):
+    recorded = versions(item.get('installed'))
+    if recorded == '-':
+        return recorded
+    # The build counter is not necessarily a user-facing application version.
+    return versions(item.get('bundle_short_version') or item.get('installed'))
+
+
+def numeric_version_compare(left, right):
+    """Compare only unambiguous numeric versions; avoid guessing vendor formats."""
+    if not all(isinstance(value, str) and re.fullmatch(r'\d+(?:\.\d+)*', value) for value in (left, right)):
+        return None
+    a, b = [int(part) for part in left.split('.')], [int(part) for part in right.split('.')]
+    width = max(len(a), len(b))
+    a += [0] * (width - len(a))
+    b += [0] * (width - len(b))
+    return (a > b) - (a < b)
+
+
+def cask_already_current(item, target):
+    # CFBundleVersion alone is often an internal build counter, not a release.
+    actual = item.get('bundle_short_version')
+    if versions(item.get('installed')) == '-' or not actual:
+        return False
+    parts = target.split(',')
+    comparison = numeric_version_compare(actual, parts[0])
+    if comparison is None or comparison < 0:
+        return False
+    if comparison > 0:
+        return True
+    if len(parts) == 1:
+        return True
+    if len(parts) == 2:
+        build = numeric_version_compare(item.get('bundle_version'), parts[1])
+        return build is not None and build >= 0
+    return False
+
+
 def inventory_items(data, key):
     if not isinstance(data, dict):
         raise ValueError("Invalid Homebrew JSON inventory")
@@ -205,7 +243,7 @@ def json_inventory(queries, action, sources):
     data = json.loads(raw)
     if not isinstance(data, dict):
         raise ValueError("Invalid Homebrew JSON inventory")
-    cask_names = {}
+    cask_details = {}
     if action == "update" and "cask" in sources and data.get("casks"):
         # Outdated JSON emits cask short tokens. Keep the installed tap identity
         # so an identically named cask in another tap cannot be upgraded instead.
@@ -214,7 +252,8 @@ def json_inventory(queries, action, sources):
             token = item.get("token")
             if token:
                 token = package_name(token)
-                cask_names[token] = item.get("full_token") or token
+                cask_details[token] = item
+                cask_details[package_name(item.get("full_token") or token)] = item
     result = []
     for source, key in (("formula", "formulae"), ("cask", "casks")):
         if source not in sources:
@@ -224,9 +263,18 @@ def json_inventory(queries, action, sources):
                 name = item.get("full_name") or item.get("name")
             else:
                 name = item.get("full_token") or item.get("token") or item.get("name")
-                name = cask_names.get(package_name(name), name)
+                details = cask_details.get(package_name(name), item)
+                name = details.get("full_token") or name
             current = versions(item.get("installed_versions") if action == "update" else item.get("installed"))
             target = clean(item.get("current_version") or "-") if action == "update" else "-"
+            if source == 'cask':
+                if action == 'update':
+                    if cask_already_current(details, target):
+                        continue
+                    if versions(details.get('installed')) != '-':
+                        current = cask_installed_version(details)
+                else:
+                    current = cask_installed_version(item)
             result.append(Row(source, package_name(name), current, target))
     return result
 
@@ -466,11 +514,16 @@ def preview(argv):
         item = items[0]
         kind = text("命令行工具", "Command-line tool") if source == "formula" else text("桌面应用", "Desktop app")
         print(clean(name) + " · " + kind + "\n")
-        installed = versions(item.get("installed"))
+        installed = cask_installed_version(item) if source == "cask" else versions(item.get("installed"))
         latest = (item.get("versions") or {}).get("stable") if source == "formula" else item.get("version")
         print(text("已安装：", "Installed: ") + (installed if installed != "-" else text("未安装", "Not installed")))
+        if source == 'cask' and versions(item.get('installed')) != '-':
+            print(text('Homebrew 安装记录：', 'Homebrew installation record: ') + versions(item.get('installed')))
         if latest:
-            print(text("最新版本：", "Latest version: ") + clean(latest))
+            label = text('Homebrew 可用版本：', 'Homebrew available version: ') if source == 'cask' else text('最新版本：', 'Latest version: ')
+            print(label + clean(latest))
+        if source == 'cask' and item.get('tap'):
+            print(text('来源：', 'Source: ') + clean(item['tap']))
         if item.get("desc"):
             print("\n" + text("简介（上游原文）", "Description") + "\n" + clean(item["desc"]))
         for key, label in (("homepage", text("主页", "Homepage")), ("license", text("许可证", "License"))):
