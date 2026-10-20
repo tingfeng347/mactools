@@ -7,6 +7,9 @@ Python 3.9+ 标准库，启动器兼容系统 Bash 3.2；支持 Intel 和 Apple 
 执行包管理器时不使用 sudo；默认不自动刷新索引，update --refresh-index 才显式 brew update。
 只读/预览命令不修改包、缓存清理目标或镜像配置；--yes 仅跳过本工具确认。
 卸载/清理不使用 --zap，不删除应用用户数据。网络查询有超时，失败明确非零退出。
+清理扩展复用 third_party/mole 源码（GPL-3.0），按菜单类别运行，禁用管理员权限和用户数据清理。
+project-artifacts 经预览确认可删除至少闲置 7 天且通过上游保护检查的项目依赖及构建产物。
+Mole 执行只能处理当前计划已预览的目标；新目标或身份变化的目标跳过。规则与归属见 docs/MOLE.md。
 镜像配置为专属 shell 片段，用户 source 后生效；备份、并发测速、回滚与精确恢复，不修改用户 shell 配置。
 AI 复用上游管理逻辑，macOS 原生/Homebrew/npm/pnpm/Bun 来源识别，保留多副本和登录数据。
 安装/卸载默认 ~/.local/bin，支持 BIN_DIR/--bin-dir，完整暂存校验后部署，无需 sudo。

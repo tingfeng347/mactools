@@ -185,6 +185,9 @@ macc --dev                   # Developer-tool and build caches only
 macc npm-cache --dry-run     # Preview npm downloads only
 macc autoremove              # Preview and confirm unused Homebrew dependencies
 macc brew-cache --dry-run    # Preview deep Homebrew cleanup
+macc browser-cache --dry-run # Preview Mole browser-cache rules
+macc ai-cache               # Preview and confirm AI versions and caches
+macc project-artifacts --dry-run # Inactive dependencies and build output
 ```
 
 Diagnostics report dependencies, architecture, Homebrew prefix, Xcode Command Line Tools, package lists, cache age, and connectivity using `OK`, `WARN`, `FAIL`, or `SKIP`, with elapsed time. `FAIL` returns a nonzero exit status. Missing optional tools are marked `SKIP`; Homebrew's own recommendations are marked `WARN`.
@@ -203,10 +206,25 @@ Select from the following actions, then preview and confirm:
 | `go-cache` | Go build cache, preserving downloaded modules |
 | `ccache` | C/C++ compilation cache, preserving configuration |
 | `xcode-derived` | Default `~/Library/Developer/Xcode/DerivedData` build cache, preserving Archives and device data |
+| `user-cache` / `app-cache` | User Library caches, logs and sandboxed application caches |
+| `browser-cache` | Browser web, code and graphics caches |
+| `cloud-cache` / `office-cache` | Rebuildable cloud-storage and Office / WPS caches |
+| `app-tools` / `vm-cache` / `app-logs` | Utility-app caches, virtualization caches and logs; VM disks are preserved |
+| `rust-cache` / `jvm-cache` / `frontend-cache` / `ruby-cache` | Rust, Gradle, frontend build and Ruby / Perl caches |
+| `cloud-cli-cache` / `build-tools-cache` / `language-cache` | Cloud CLI, build, CI, shell and other language-tool caches |
+| `ai-cache` / `editor-cache` | AI tool superseded versions and caches, editor caches and logs |
+| `xcode-extra` | Xcode documentation caches and eligible XCTest devices |
+| `project-cache` | Rebuildable project caches, with tracked-file and nested-repository guards |
+| `project-artifacts` | Dependencies and build output inactive for at least 7 days and passing activity/content checks |
+| `installers` | Installer DMG, PKG, ISO, XIP and similar files under home; ZIPs must contain installer content |
 
 Homebrew uses its native `--dry-run`. Developer-cache previews only query paths and perform a bounded size scan; they never invoke cleanup commands. Sizes show current cache totals, not estimated savings. Missing optional tools show `SKIP`. Future installs or builds may recreate caches; stop Xcode builds before cleaning DerivedData.
 
-`--formula` / `--cask` restrict cleanup to the corresponding Homebrew actions. `--dev` selects developer caches without requiring Homebrew and cannot be combined with those flags. Cleanup preserves application data, project `node_modules` / `.venv`, sources and Xcode Archives, and does not use `--zap`.
+`--formula` / `--cask` restrict cleanup to the corresponding Homebrew actions. `--dev` selects developer actions without requiring Homebrew and cannot be combined with those flags. Cleanup preserves application user data, sources and Xcode Archives, and does not use `--zap`. `project-artifacts` can remove eligible inactive `node_modules`, `.venv`, `target`, `dist` and similar directories after preview and confirmation; dependencies or build output will need to be recreated.
+
+Extended cleanup bundles and reuses [Mole](https://github.com/tw93/Mole) source; no separate Mole installation is required. Upstream whitelist, process, open-file and path guards are retained. Preview scans without deleting; apply additionally checks the previewed target identities and skips new or replaced targets. mactools provides the selector and confirmation; detailed Mole diagnostics retain upstream English text. Cleanup neither requests nor reuses administrator access, empties Trash, removes recent-document records/mail attachments, or touches system snapshots and OS update staging.
+
+Protect paths in `~/.config/mactools/mole/whitelist`, one absolute path per line (`~` is supported). Cleanup records are under `~/Library/Logs/mactools/mole/`, isolated from a separate Mole installation. Preview can write tool-owned diagnostics and temporary scan files, but never deletes cleanup targets. See [Mole integration](docs/MOLE.md) for the pinned source, coverage and rebuild steps. Distributed under [GPL-3.0](LICENSE); attribution is in [NOTICE](NOTICE.md).
 
 The cleanup menu opens before querying installed packages. Selection and preview query only the chosen package type; `autoremove` needs no package listing. Execution uses a freshly generated cleanup plan.
 

@@ -185,6 +185,9 @@ macc --dev                   # 仅开发工具和构建缓存
 macc npm-cache --dry-run     # 只预览 npm 下载缓存
 macc autoremove              # 预览并确认移除 Homebrew 无用依赖
 macc brew-cache --dry-run    # 预览 Homebrew 深度缓存清理
+macc browser-cache --dry-run # 预览 Mole 浏览器缓存规则
+macc ai-cache               # AI 工具旧版本和缓存，先预览再确认
+macc project-artifacts --dry-run # 闲置项目依赖与构建产物
 ```
 
 诊断按 `OK` / `WARN` / `FAIL` / `SKIP` 输出依赖、架构、Homebrew 前缀、Xcode Command Line Tools、包列表、缓存年龄与联网结果，并显示耗时。`FAIL` 返回非零状态；缺失的可选工具记为 `SKIP`，Homebrew 自身的建议记为 `WARN`。
@@ -203,10 +206,25 @@ macc brew-cache --dry-run    # 预览 Homebrew 深度缓存清理
 | `go-cache` | Go 构建缓存，保留模块下载 |
 | `ccache` | C/C++ 编译缓存，保留配置 |
 | `xcode-derived` | 默认 `~/Library/Developer/Xcode/DerivedData` 构建缓存，保留 Archives 和设备数据 |
+| `user-cache` / `app-cache` | 用户 Library 缓存、日志与应用沙盒缓存 |
+| `browser-cache` | 浏览器网页、代码和图形缓存 |
+| `cloud-cache` / `office-cache` | 云盘及 Office / WPS 可再生缓存 |
+| `app-tools` / `vm-cache` / `app-logs` | 常用软件缓存、虚拟化缓存及应用日志；保留虚拟磁盘 |
+| `rust-cache` / `jvm-cache` / `frontend-cache` / `ruby-cache` | Rust、Gradle、前端构建及 Ruby / Perl 缓存 |
+| `cloud-cli-cache` / `build-tools-cache` / `language-cache` | 云 CLI、构建、CI、Shell 及其他语言工具缓存 |
+| `ai-cache` / `editor-cache` | AI 工具旧版本和缓存、编辑器缓存与日志 |
+| `xcode-extra` | Xcode 文档缓存和可清理的测试设备 |
+| `project-cache` | 项目可再生缓存，检查 Git 跟踪文件和嵌套仓库 |
+| `project-artifacts` | 至少闲置 7 天、通过活动与内容检查的项目依赖和构建目录 |
+| `installers` | 用户目录中的 DMG、PKG、ISO、XIP 等安装包；ZIP 仅识别含安装内容的压缩包 |
 
 Homebrew 使用自己的 `--dry-run` 展示预览；开发缓存只查询目录并限时统计大小，不在预览时调用清理命令。显示的是当前缓存总量，并非预计回收量。缺失的可选工具显示 `SKIP`。再次安装或构建时可能重新生成缓存；清理 Xcode 前请停止构建。
 
-`--formula` / `--cask` 仅保留对应 Homebrew 项目；`--dev` 仅保留开发缓存，不依赖 Homebrew，不能与前两者合用。不清除应用数据、项目的 `node_modules` / `.venv`、源代码或 Xcode Archives，不使用 `--zap`。
+`--formula` / `--cask` 仅保留对应 Homebrew 项目；`--dev` 仅保留开发相关项目，不依赖 Homebrew，不能与前两者合用。不清除应用用户数据、源代码或 Xcode Archives，不使用 `--zap`。`project-artifacts` 会列出符合规则的闲置 `node_modules`、`.venv`、`target`、`dist` 等目录，确认后删除；以后需要重新安装依赖或构建。
+
+扩展清理直接复用 [Mole](https://github.com/tw93/Mole) 的源码，随 mactools 打包，无需另外安装 Mole。保留上游的白名单、进程、打开文件和路径保护，预览只扫描；执行时还核对预览记录中的目标身份，新出现或被替换的目标会跳过。菜单和确认仍由 mactools 提供，Mole 的详细诊断保留上游英文输出。清理不会请求或复用管理员权限，不清空废纸篓，不删最近文档记录、邮件附件、系统快照或软件更新文件。
+
+自定义保护路径写入 `~/.config/mactools/mole/whitelist`（每行一个绝对路径，支持 `~`）。清理记录保存在 `~/Library/Logs/mactools/mole/`，与独立安装的 Mole 分开。预览也可能写入本工具的诊断记录及临时扫描文件，但不会删除清理目标。源码固定版本、接入范围与重建方法见 [Mole 接入说明](docs/MOLE.md)。项目采用 [GPL-3.0](LICENSE)，上游归属见 [NOTICE](NOTICE.md)。
 
 清理菜单直接打开，选择后才读取对应类型的软件列表；预览只查询当前项目，单独选择 `autoremove` 时无需读取软件列表。执行前生成实时清理计划。
 
