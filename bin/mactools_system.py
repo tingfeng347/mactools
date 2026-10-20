@@ -1,4 +1,4 @@
-"""Read-only diagnostics and native Homebrew cleanup plans."""
+"""Read-only diagnostics and confirmed Homebrew/developer cleanup plans."""
 import argparse
 import os
 import platform
@@ -12,6 +12,7 @@ from pathlib import Path
 
 from mactools_runtime import brew_env, brew_path, cache_dir, command, confirm, fetch, run, text
 from mactools_packages import cell, clip_cell, selector_widths, without_color
+from mactools_cleanup import cache_info, development_plan
 
 
 def positive(value):
@@ -96,9 +97,14 @@ def selected_scopes(args):
 
 
 def cleanup_choices(args):
-    names = [scope + '-cache' for scope in selected_scopes(args)]
-    if 'formula' in selected_scopes(args):
+    scopes = [] if args.dev else selected_scopes(args)
+    names = [scope + '-cache' for scope in scopes]
+    if 'formula' in scopes:
         names.append('autoremove')
+    if not args.formula and not args.cask:
+        if not args.dev:
+            names.append('brew-cache')
+        names.extend(cache_info())
     return [name for name in names if not args.query or all(
         (q.lower() == name.lower()) if args.exact else (q.lower() in name.lower())
         for q in args.query)]
@@ -108,7 +114,8 @@ def cleanup_actions(brew, args, choices):
     # cleanup has no --formula/--cask selector: pass the installed names explicitly.
     actions = []
     for scope in selected_scopes(args):
-        if scope + '-cache' not in choices:
+        # Global deep cleanup already covers both scoped cleanup actions.
+        if scope + '-cache' not in choices or 'brew-cache' in choices:
             continue
         result = run([brew, 'list', '--' + scope, '--full-name', '-1'], env=brew_env(), capture_output=True, text=True, timeout=args.timeout)
         if result.returncode:
@@ -124,6 +131,8 @@ def cleanup_actions(brew, args, choices):
             actions.append((scope + '-cache', [brew, 'cleanup', '--', *names]))
     if 'autoremove' in choices:
         actions.append(('autoremove', [brew, 'autoremove']))
+    if 'brew-cache' in choices:
+        actions.append(('brew-cache', [brew, 'cleanup', '--prune=all', '--scrub']))
     return actions
 
 
@@ -141,6 +150,11 @@ def cleanup_info(name):
                        text('未使用的依赖', 'Unused dependencies'),
                        text('移除 Homebrew 判定已不再需要的 Formula 依赖。',
                             'Remove formula dependencies Homebrew considers no longer needed.')),
+        'brew-cache': ('brew', text('Homebrew 深度缓存', 'Homebrew deep cleanup'),
+                       text('全局缓存与旧版本', 'Global cache / old versions'),
+                       text('使用 cleanup --prune=all --scrub 清理全局旧版本、过期锁和可删除的下载；Homebrew 仍保留已安装软件的下载缓存。',
+                            'Use cleanup --prune=all --scrub for global old versions, stale locks and removable downloads; Homebrew retains downloads for installed packages.')),
+        **cache_info(),
     }[name]
 
 
@@ -211,8 +225,13 @@ def preview_cleanup(args):
     name = args.preview_action
     kind, title, _, description = cleanup_info(name)
     print(f'{title} · {kind}\n\n{description}\n')
-    print(text('Homebrew 预览 · 回车核对，确认后执行',
-               'Homebrew preview · Enter to review, then confirm'), flush=True)
+    print(text('清理预览 · 回车核对，确认后执行',
+               'Cleanup preview · Enter to review, then confirm'), flush=True)
+    if name in cache_info():
+        plan = development_plan(name, args.timeout)
+        if plan:
+            plan.preview()
+        return 0
     actions = cleanup_actions(brew_path(), args, [name])
     if not actions:
         print(text('没有可清理的已安装软件。', 'No installed packages to clean.'))
@@ -249,19 +268,23 @@ def clean(args):
     if not choices:
         print(text('没有匹配的清理项目。', 'No matching cleanup actions.'))
         return 0
-    brew = brew_path()
     if not args.list and not args.query and not args.yes and shutil.which('fzf'):
         choices, status = choose_cleanup(args, choices)
         if status or not choices:
             return status
     # Build plans from current inventory only after selection. No cached names
     # can authorize cleanup, and unused scopes never need a Homebrew query.
-    matches = cleanup_actions(brew, args, choices)
+    brew_choices = [name for name in choices if name not in cache_info()]
+    matches = cleanup_actions(brew_path(), args, brew_choices) if brew_choices else []
+    plans = [plan for name in choices if name in cache_info()
+             for plan in [development_plan(name, args.timeout)] if plan]
     if args.list:
         for name, argv in matches:
             print(name + '\t' + shlex.join(argv))
+        for plan in plans:
+            print(plan.name + '\t' + (shlex.join(plan.argv) if plan.argv else str(plan.path)))
         return 0
-    if not matches:
+    if not matches and not plans:
         print(text('没有匹配的清理项目。', 'No matching cleanup actions.'))
         return 0
     for _, argv in matches:
@@ -270,15 +293,22 @@ def clean(args):
         result = run(preview, timeout=args.timeout, env=brew_env())
         if result.returncode:
             return result.returncode
+    for plan in plans:
+        print('\n' + cleanup_info(plan.name)[1])
+        plan.preview()
     if args.dry_run:
         return 0
-    if not matches or not confirm(text('执行以上 Homebrew 清理计划？', 'Apply the Homebrew cleanup plan above?'), args.yes):
+    if not confirm(text('执行以上清理计划？', 'Apply the cleanup plan above?'), args.yes):
         return 0
     for _, argv in matches:
         command(argv)
         result = run(argv, timeout=600, env=brew_env())
         if result.returncode:
             return result.returncode
+    for plan in plans:
+        status = plan.apply(args.timeout)
+        if status:
+            return status
     return 0
 
 
@@ -293,14 +323,17 @@ def main(argv=None):
         if action == 'doctor':
             sub.add_argument('--offline', action='store_true')
         else:
-            sub.add_argument('--list', action='store_true')
-            sub.add_argument('--dry-run', action='store_true')
+            sub.add_argument('--dev', action='store_true', help=text('仅开发工具和构建缓存', 'Only developer-tool and build caches'))
+            sub.add_argument('--list', action='store_true', help=text('只列出可用的清理计划', 'List available cleanup plans only'))
+            sub.add_argument('--dry-run', action='store_true', help=text('仅预览，不执行清理', 'Preview without applying cleanup'))
             sub.add_argument('--yes', '-y', action='store_true')
             sub.add_argument('-e', '--exact', action='store_true')
             sub.add_argument('--generate', action='store_true', help=argparse.SUPPRESS)
-            sub.add_argument('--preview-action', choices=('formula-cache', 'cask-cache', 'autoremove'), help=argparse.SUPPRESS)
-            sub.add_argument('query', nargs='*')
+            sub.add_argument('--preview-action', choices=('formula-cache', 'cask-cache', 'autoremove', 'brew-cache', *cache_info()), help=argparse.SUPPRESS)
+            sub.add_argument('query', nargs='*', help=text('按项目 ID 筛选，如 npm-cache、autoremove', 'Filter action IDs, e.g. npm-cache or autoremove'))
     args = parser.parse_args(argv)
+    if args.action == 'clean' and args.dev and (args.formula or args.cask):
+        parser.error('--dev cannot be combined with --formula/--cask')
     if args.action == 'clean' and args.preview_action:
         args.query = [args.preview_action]
         return preview_cleanup(args)

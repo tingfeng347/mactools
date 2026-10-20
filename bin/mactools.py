@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mactools_runtime import atomic_write, config_dir, text
 
-VERSION = "0.1.11"
+VERSION = "0.1.12"
 COMMANDS = {
     "install": "maci", "remove": "macr", "update": "macu", "doctor": "macd",
     "clean": "macc", "mirror": "macm", "ai": "maca",
@@ -36,7 +36,7 @@ def help_text():
   remove    搜索并卸载软件 (macr)
   update    查看并更新软件 (macu)
   doctor    环境、缓存与连通性检查 (macd)
-  clean     预览并清理 Homebrew 空间 (macc)
+  clean     清理缓存、旧版本与无用依赖 (macc)
   mirror    镜像测速、切换与恢复 (macm)
   ai        AI 编程工具管理 (maca)
   setup     设置语言：ma setup zh|en
@@ -49,7 +49,7 @@ def help_text():
   remove    Search and remove packages (macr)
   update    Review and apply package updates (macu)
   doctor    Check environment, caches and connectivity (macd)
-  clean     Preview and clean Homebrew disk space (macc)
+  clean     Clean caches, old versions and unused dependencies (macc)
   mirror    Benchmark, switch and restore mirrors (macm)
   ai        Manage AI coding tools (maca)
   setup     Set language: ma setup zh|en
@@ -80,6 +80,8 @@ Run ma <command> --help for command help.""")
 def completion(shell):
     # All candidates are constants: no subprocess/network/package queries during completion.
     actions = " ".join(COMMANDS) + " setup completion help"
+    clean_actions = ('formula-cache cask-cache autoremove brew-cache pip-cache npm-cache '
+                     'pnpm-store uv-cache go-cache ccache xcode-derived')
     if shell == "bash":
         print('''_mactools_complete() {
     local words cur action
@@ -93,7 +95,7 @@ def completion(shell):
     case "$action" in
         install|remove|update) words="--formula --brew --cask --exact --refresh --list --dry-run --yes --timeout --help";;
         doctor) words="--formula --brew --cask --offline --timeout --help";;
-        clean) words="--formula --brew --cask --exact --list --dry-run --yes --timeout --help";;
+        clean) words="''' + clean_actions + ''' --formula --brew --cask --dev --exact --list --dry-run --yes --timeout --help";;
         mirror) words="test auto restore --json --mirror --timeout --limit --dry-run --yes --force --config-dir --state-dir --help";;
         ai) words="install remove uninstall update status doctor codex claude opencode pi qodercn gemini qwen zcode --all --path --dry-run --yes --check --latest --offline --timeout --help";;
         setup) words="zh en --help";;
@@ -115,7 +117,7 @@ complete -F _mactools_complete ma maci macr macu macd macc macm maca''')
         ma:ai|maca:*) candidates=(install remove uninstall update status doctor codex claude opencode pi qodercn gemini qwen zcode --all --path --dry-run --yes --check --latest --offline --timeout --help);;
         ma:mirror|macm:*) candidates=(test auto restore --json --mirror --timeout --limit --dry-run --yes --force --config-dir --state-dir --help);;
         ma:doctor|macd:*) candidates=(--formula --brew --cask --offline --timeout --help);;
-        ma:clean|macc:*) candidates=(--formula --brew --cask --exact --list --dry-run --yes --timeout --help);;
+        ma:clean|macc:*) candidates=(''' + clean_actions + ''' --formula --brew --cask --dev --exact --list --dry-run --yes --timeout --help);;
         *) candidates=(--formula --brew --cask --exact --refresh --list --dry-run --yes --timeout --help);;
     esac
     if [[ ${words[1]:t} == ma && CURRENT == 2 ]]; then
@@ -135,7 +137,7 @@ compdef _mactools_complete ma maci macr macu macd macc macm maca''')
             "remove": "formula brew cask exact refresh list dry-run yes timeout help",
             "update": "formula brew cask exact refresh refresh-index list dry-run yes timeout help",
             "doctor": "formula brew cask offline timeout help",
-            "clean": "formula brew cask exact list dry-run yes timeout help",
+            "clean": "formula brew cask dev exact list dry-run yes timeout help",
             "mirror": "json mirror timeout limit dry-run yes force config-dir state-dir help",
             "ai": "all path dry-run yes check latest offline timeout help",
         }
@@ -146,7 +148,7 @@ compdef _mactools_complete ma maci macr macu macd macc macm maca''')
                 print(f"complete -c ma{condition} -l {option}")
                 print(f"complete -c {alias} -l {option}")
             choices = {"ai": "install remove uninstall update status doctor codex claude opencode pi qodercn gemini qwen zcode",
-                       "mirror": "test auto restore"}.get(action)
+                       "mirror": "test auto restore", "clean": clean_actions}.get(action)
             if choices:
                 print(f"complete -c ma{condition} -a '{choices}'")
                 print(f"complete -c {alias} -a '{choices}'")

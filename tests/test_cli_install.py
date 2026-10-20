@@ -102,6 +102,7 @@ class CLI(unittest.TestCase):
             self.assertIn('refresh-index', result.stdout)
             self.assertIn('config-dir', result.stdout)
             self.assertIn('latest', result.stdout)
+            self.assertIn('dev', result.stdout)
             if shell in ('bash', 'zsh'):
                 parsed = subprocess.run([shell, '-n'], input=result.stdout,
                                         capture_output=True, text=True, timeout=10)
@@ -127,6 +128,9 @@ class Install(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(os.access(target / 'maci', os.X_OK))
         self.assertEqual(self.invoke('--version', executable=target / 'ma').returncode, 0)
+        clean = self.invoke('clean', '--dev', '--generate', executable=target / 'ma')
+        self.assertEqual(clean.returncode, 0, clean.stderr)
+        self.assertIn('xcode-derived', clean.stdout)
         (target / 'unrelated').write_text('preserve')
         marker = self.root / 'config/mactools/language'
         marker.parent.mkdir(parents=True)
@@ -138,6 +142,7 @@ class Install(unittest.TestCase):
         result = self.script('uninstall.sh', '--bin-dir', str(target))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((target / 'ma').exists())
+        self.assertFalse((target / 'mactools_cleanup.py').exists())
         self.assertEqual((target / 'unrelated').read_text(), 'preserve')
         self.assertEqual(marker.read_text(), 'en\n')
 

@@ -16,6 +16,10 @@ import mactools_system as system
 class SystemTests(unittest.TestCase):
     def setUp(self):
         self.commands = []
+        # Existing Homebrew tests must not discover tools or caches on the host.
+        patcher = patch.object(system, 'development_plan', return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def fake_run(self, argv, **kwargs):
         self.commands.append((argv, kwargs))
@@ -179,7 +183,7 @@ class SystemTests(unittest.TestCase):
 
     def test_cleanup_disambiguates_formula_and_cask_tokens(self):
         with patch.object(system, 'brew_path', return_value='/stub/brew'), patch.object(system, 'run', side_effect=self.fake_run), contextlib.redirect_stdout(io.StringIO()):
-            system.main(['clean', '--dry-run', '--yes'])
+            system.main(['clean', '--dry-run', '--yes', '--formula', '--cask'])
         previews = [a for a, _ in self.commands if a[1] == 'cleanup']
         self.assertEqual(previews[0][-1], 'homebrew/core/hello')
         self.assertEqual(previews[1][-1], 'homebrew/cask/hello')

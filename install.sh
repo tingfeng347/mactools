@@ -32,7 +32,7 @@ install_mactools() {
     script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
     stage="$(mktemp -d "${TMPDIR:-/tmp}/mactools-install.XXXXXX")"
     trap "rm -rf -- $(printf '%q' "$stage")" EXIT
-    local files=(ma maci macr macu macd macc macm maca mactools.py mactools_runtime.py mactools_packages.py mactools_system.py mactools_mirror.py mactools_ai.py)
+    local files=(ma maci macr macu macd macc macm maca mactools.py mactools_runtime.py mactools_packages.py mactools_system.py mactools_cleanup.py mactools_mirror.py mactools_ai.py)
     local local_ready=true
     for file in "${files[@]}"; do
         [[ -s "$script_dir/bin/$file" ]] || local_ready=false
