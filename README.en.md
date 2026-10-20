@@ -189,6 +189,8 @@ Cleanup uses Homebrew's `cleanup --dry-run` and `autoremove --dry-run` for previ
 
 The cleanup menu opens before querying installed packages. Selection and preview query only the chosen package type; `autoremove` needs no package listing. Execution uses a freshly generated cleanup plan.
 
+The cleanup selector follows `maci`: search at the top, aligned type/name/scope columns, and descriptions with Homebrew previews on the right. Use `Ctrl+/` to toggle details and `Ctrl+A` to select all. Repeated warnings about packages without the latest version installed are grouped in the details pane; the full native preview and confirmation still appear before cleanup.
+
 ## Mirrors
 
 ```bash
