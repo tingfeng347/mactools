@@ -56,6 +56,43 @@ class SystemTests(unittest.TestCase):
         self.assertEqual(self.commands[0][0], ['/stub/brew', 'list', '--cask', '--full-name', '-1'])
         self.assertNotIn('autoremove', output.getvalue())
 
+    def test_clean_menu_generation_needs_no_inventory(self):
+        with patch.object(system, 'brew_path', side_effect=AssertionError('menu queried brew')), patch.object(system, 'run', side_effect=AssertionError('menu queried inventory')), contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(system.main(['clean', '--generate', '--cask']), 0)
+        self.assertEqual(output.getvalue().splitlines(), ['cask-cache'])
+
+    def test_autoremove_plan_needs_no_package_lists(self):
+        with patch.object(system, 'brew_path', return_value='/stub/brew'), patch.object(system, 'run', side_effect=AssertionError('unrelated inventory')), contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(system.main(['clean', 'autoremove', '--list']), 0)
+        self.assertIn('autoremove\t/stub/brew autoremove', output.getvalue())
+
+    def test_clean_preview_only_queries_selected_scope(self):
+        with patch.object(system, 'brew_path', return_value='/stub/brew'), patch.object(system, 'run', side_effect=self.fake_run), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(system.main(['clean', '--preview-action', 'cask-cache']), 0)
+        self.assertEqual([argv for argv, _ in self.commands], [
+            ['/stub/brew', 'list', '--cask', '--full-name', '-1'],
+            ['/stub/brew', 'cleanup', '--dry-run', '--', 'homebrew/cask/hello'],
+        ])
+
+    def test_clean_queries_inventory_after_selection_and_cancel_queries_nothing(self):
+        for cancelled in (False, True):
+            self.commands = []
+            menu_opened = False
+
+            def run(argv, **kwargs):
+                nonlocal menu_opened
+                if argv[0] == 'fzf':
+                    self.assertFalse(self.commands, 'inventory blocked menu startup')
+                    menu_opened = True
+                    return subprocess.CompletedProcess(argv, 130 if cancelled else 0, 'cask-cache\n', '')
+                self.assertTrue(menu_opened)
+                return self.fake_run(argv, **kwargs)
+
+            with patch.object(system, 'brew_path', return_value='/stub/brew'), patch.object(system.shutil, 'which', return_value='/stub/fzf'), patch.object(system, 'run', side_effect=run), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(system.main(['clean', '--dry-run']), 0)
+            inventories = [argv for argv, _ in self.commands if argv[1] == 'list']
+            self.assertEqual(inventories, [] if cancelled else [['/stub/brew', 'list', '--cask', '--full-name', '-1']])
+
     def test_clean_preview_never_mutates(self):
         with patch.object(system, 'brew_path', return_value='/stub/brew'), patch.object(system, 'run', side_effect=self.fake_run), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(system.main(['clean', '--dry-run', '--yes', '--formula']), 0)

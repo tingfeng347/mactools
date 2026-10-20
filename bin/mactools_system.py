@@ -93,10 +93,21 @@ def selected_scopes(args):
     return [name for name in ('formula', 'cask') if getattr(args, name)] or ['formula', 'cask']
 
 
-def cleanup_actions(brew, args):
+def cleanup_choices(args):
+    names = [scope + '-cache' for scope in selected_scopes(args)]
+    if 'formula' in selected_scopes(args):
+        names.append('autoremove')
+    return [name for name in names if not args.query or all(
+        (q.lower() == name.lower()) if args.exact else (q.lower() in name.lower())
+        for q in args.query)]
+
+
+def cleanup_actions(brew, args, choices):
     # cleanup has no --formula/--cask selector: pass the installed names explicitly.
     actions = []
     for scope in selected_scopes(args):
+        if scope + '-cache' not in choices:
+            continue
         result = run([brew, 'list', '--' + scope, '--full-name', '-1'], env=brew_env(), capture_output=True, text=True, timeout=args.timeout)
         if result.returncode:
             raise ValueError(result.stderr.strip() or 'brew list failed')
@@ -109,19 +120,42 @@ def cleanup_actions(brew, args):
             tap = 'homebrew/core/' if scope == 'formula' else 'homebrew/cask/'
             names = [name if '/' in name else tap + name for name in names]
             actions.append((scope + '-cache', [brew, 'cleanup', '--', *names]))
-    if 'formula' in selected_scopes(args):
+    if 'autoremove' in choices:
         actions.append(('autoremove', [brew, 'autoremove']))
     return actions
 
 
 def clean(args):
-    brew = brew_path()
-    actions = cleanup_actions(brew, args)
-    matches = [(name, argv) for name, argv in actions if not args.query or all((q.lower() == name.lower()) if args.exact else (q.lower() in name.lower()) for q in args.query)]
+    choices = cleanup_choices(args)
     if args.generate:
-        for name, _ in matches:
+        for name in choices:
             print(name)
         return 0
+    if not choices:
+        print(text('没有匹配的清理项目。', 'No matching cleanup actions.'))
+        return 0
+    brew = brew_path()
+    if not args.list and not args.query and not args.yes and shutil.which('fzf'):
+        # Preview is a fixed, shell-quoted invocation; selected strings are validated below.
+        preview = shlex.join([sys.executable, str(Path(__file__).resolve()), 'clean', '--timeout', str(args.timeout), '--preview-action']) + ' {1}'
+        reload_argv = [sys.executable, str(Path(__file__).resolve()), 'clean', '--generate']
+        reload_argv += ['--' + scope for scope in selected_scopes(args)]
+        reload_command = shlex.join(reload_argv)
+        rows = '\n'.join(choices) + '\n'
+        env = brew_env()
+        env['SHELL'] = '/bin/sh'
+        result = run(['fzf', '--multi', '--header', text('Tab 多选 | Enter 预览并确认', 'Tab: multi-select | Enter: review and confirm'), '--preview', preview, '--bind', 'ctrl-r:reload(' + reload_command + ')', *(['--exact'] if args.exact else [])], input=rows, text=True, stdout=subprocess.PIPE, env=env, timeout=86400)
+        if result.returncode in (1, 130):
+            return 0
+        if result.returncode:
+            return result.returncode
+        chosen = result.stdout.splitlines()
+        if any(name not in choices for name in chosen):
+            raise ValueError('invalid cleanup selection')
+        choices = [name for name in choices if name in chosen]
+    # Build plans from current inventory only after selection. No cached names
+    # can authorize cleanup, and unused scopes never need a Homebrew query.
+    matches = cleanup_actions(brew, args, choices)
     if args.list:
         for name, argv in matches:
             print(name + '\t' + shlex.join(argv))
@@ -129,22 +163,6 @@ def clean(args):
     if not matches:
         print(text('没有匹配的清理项目。', 'No matching cleanup actions.'))
         return 0
-    if not args.query and not args.yes and shutil.which('fzf'):
-        # Preview is a fixed, shell-quoted invocation; selected strings are validated below.
-        preview = shlex.join([sys.executable, str(Path(__file__).resolve()), 'clean', '--preview-action']) + ' {1}'
-        reload_argv = [sys.executable, str(Path(__file__).resolve()), 'clean', '--generate']
-        reload_argv += ['--' + scope for scope in selected_scopes(args)]
-        reload_command = shlex.join(reload_argv)
-        choices = '\n'.join(name for name, _ in matches) + '\n'
-        result = run(['fzf', '--multi', '--header', text('Tab 多选 | Enter 预览并确认', 'Tab: multi-select | Enter: review and confirm'), '--preview', preview, '--bind', 'ctrl-r:reload(' + reload_command + ')', *(['--exact'] if args.exact else [])], input=choices, text=True, stdout=subprocess.PIPE, env=brew_env(), timeout=86400)
-        if result.returncode in (1, 130):
-            return 0
-        if result.returncode:
-            return result.returncode
-        chosen = result.stdout.splitlines()
-        if any(name not in dict(matches) for name in chosen):
-            raise ValueError('invalid cleanup selection')
-        matches = [(name, argv) for name, argv in matches if name in chosen]
     for _, argv in matches:
         preview = argv[:2] + ['--dry-run'] + argv[2:]
         command(preview)
