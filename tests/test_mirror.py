@@ -3,6 +3,8 @@ import contextlib
 import http.server
 import io
 import json
+import os
+import shutil
 import socketserver
 import subprocess
 import sys
@@ -60,7 +62,7 @@ class MirrorTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
-        self.args = argparse.Namespace(config_dir=str(self.root / 'config'), state_dir=str(self.root / 'state'), yes=True, force=False, dry_run=False, timeout=1, limit=8, mirror=[self.url + '/good', self.url + '/bad'])
+        self.args = argparse.Namespace(config_dir=str(self.root / 'config'), state_dir=str(self.root / 'state'), yes=True, force=False, dry_run=False, timeout=1, limit=8, mirror=[self.url + '/good', self.url + '/bad'], shell='sh')
         self.sample = {'url': self.url + '/official', 'filename': 'hello.bottle.tar.gz', 'sha256': mirror.digest(PAYLOAD), 'bytes': len(PAYLOAD)}
 
     def tearDown(self):
@@ -96,6 +98,43 @@ class MirrorTests(unittest.TestCase):
         output = mirror.restore(self.args)
         self.assertFalse((self.root / 'config' / 'mirrors.sh').exists())
         self.assertTrue(output['source'].startswith('unset '))
+
+    def test_shell_auto_detection_and_explicit_override(self):
+        self.args.shell = 'auto'
+        with patch.dict(os.environ, SHELL='/custom/bin/fish'):
+            self.assertEqual(mirror.config_target(self.args).name, 'mirrors.fish')
+            self.assertEqual(mirror.backup_target(self.args).name, 'mirror-backup-fish.json')
+            self.args.shell = 'sh'
+            self.assertEqual(mirror.config_target(self.args).name, 'mirrors.sh')
+            self.assertEqual(mirror.backup_target(self.args).name, 'mirror-backup.json')
+
+    @unittest.skipUnless(shutil.which('fish'), 'host fish unavailable')
+    def test_fish_fragment_activation_and_restore_use_real_shell(self):
+        self.args.shell = 'fish'
+        self.args.config_dir = str(self.root / 'config with spaces')
+        applied = mirror.apply(self.args, self.url)
+        variables = ('HOMEBREW_ARTIFACT_DOMAIN', 'HOMEBREW_ARTIFACT_DOMAIN_NO_FALLBACK',
+                     'HOMEBREW_BOTTLE_DOMAIN', 'HOMEBREW_API_DOMAIN')
+
+        def environment(command):
+            result = subprocess.run(['fish', '--no-config', '-c', command + '; env'],
+                                    env=dict(os.environ, **{key: 'old' for key in variables}),
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stderr, '')
+            return dict(line.split('=', 1) for line in result.stdout.splitlines()
+                        if line.partition('=')[0] in variables)
+
+        self.assertEqual(environment(applied['source']), {
+            'HOMEBREW_BOTTLE_DOMAIN': self.url,
+            'HOMEBREW_API_DOMAIN': self.url + '/api',
+        })
+        restored = mirror.restore(self.args)
+        self.assertFalse(Path(applied['path']).exists())
+        self.assertEqual(environment(restored['source']), {
+            'HOMEBREW_ARTIFACT_DOMAIN': 'old',
+            'HOMEBREW_ARTIFACT_DOMAIN_NO_FALLBACK': 'old',
+        })
 
     def test_restore_refuses_modified_config_unless_force(self):
         mirror.apply(self.args, self.url)

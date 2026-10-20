@@ -14,10 +14,10 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install terminal test dependencies on Linux
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y zsh fzf
+        run: sudo apt-get update && sudo apt-get install -y zsh fzf fish
       - name: Install terminal test dependencies on macOS
         if: runner.os == 'macOS'
-        run: brew list fzf >/dev/null 2>&1 || brew install fzf
+        run: brew list fzf fish >/dev/null 2>&1 || brew install fzf fish
       - name: Validate launchers using system Bash
         run: |
           for file in install.sh uninstall.sh bin/ma bin/maci bin/macr bin/macu bin/macd bin/macc bin/macm bin/maca; do /bin/bash -n "$file"; done
