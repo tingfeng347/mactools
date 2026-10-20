@@ -126,7 +126,7 @@ PY
     if [[ "$dry_run" == true ]]; then
         echo 'Preview complete; no installation files changed.'
     else
-        printf 'Commands: ma install / maci, macr, macu, macd, macc, macm, maca\n'
+        printf 'Commands: ma install / maci, macr, macu, macd, macc, maco, macm, maca\n'
         printf 'Add this directory to PATH if needed: %s\n' "$bin_dir"
         echo 'Interactive package selection requires fzf: brew install fzf'
     fi
