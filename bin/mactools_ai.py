@@ -14,6 +14,7 @@ import tarfile
 import urllib.parse
 from dataclasses import dataclass
 from contextlib import ExitStack
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from mactools_packages import cell, clean, selector_widths
@@ -700,24 +701,47 @@ def compare_versions(current, published):
     return (len(a) > len(b)) - (len(a) < len(b))
 
 
+@dataclass
+class ToolReport:
+    name: str
+    installations: list
+    versions: list
+    published: str
+    latest_error: str
+
+
+def inspect_tools(names, timeout, latest_versions=False, installed_only=False):
+    """Bound read-only probes; emit reports in the user's requested order."""
+    def inspect(name):
+        installations = detect_all(name)
+        published = error = ''
+        if latest_versions and (installations or not installed_only):
+            try:
+                published = latest(name, timeout)
+            except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+                error = type(exc).__name__
+        versions = [] if installed_only and error else [(found, version(found)) for found in installations]
+        return ToolReport(name, installations, versions, published, error)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        yield from pool.map(inspect, names)
+
+
 def check_updates(names, timeout):
     print(text("工具       当前版本                  上游最新       状态 / 来源 / 路径",
                "Tool       Installed version         Upstream       State / source / path"))
     failed = False
-    for name in names:
-        installations = detect_all(name)
-        if not installations:
+    for report in inspect_tools(names, timeout, latest_versions=True, installed_only=True):
+        name, published = report.name, report.published
+        if not report.installations:
             print(f"{name:10} -                         -              " + text("未安装", "Not installed"))
             continue
-        try:
-            published = latest(name, timeout)
-        except (OSError, ValueError, subprocess.TimeoutExpired) as error:
-            print(text(f"{name}: 检查失败（{type(error).__name__}）",
-                       f"{name}: check failed ({type(error).__name__})"))
+        if report.latest_error:
+            print(text(f"{name}: 检查失败（{report.latest_error}）",
+                       f"{name}: check failed ({report.latest_error})"))
             failed = True
             continue
-        for found in installations:
-            current, bad = version(found)
+        for found, (current, bad) in report.versions:
             comparison = None if bad else compare_versions(current, published)
             if comparison is None:
                 state = text("无法比较", "Cannot compare")
@@ -732,6 +756,19 @@ def check_updates(names, timeout):
     print(text("ZCode 最新版本来自官方源码，其余来自 npm；Homebrew 等渠道的版本可能不同。",
                "Latest uses official source metadata for ZCode and npm for other clients; Homebrew availability may differ."))
     return int(failed)
+
+
+def check_endpoints(names, timeout):
+    def check(name):
+        try:
+            # Connectivity needs only a small response, not the full installer.
+            fetch(TOOLS[name]['url'], timeout=timeout, limit=1024, partial=True)
+            return name, ''
+        except (OSError, ValueError) as exc:
+            return name, type(exc).__name__
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        yield from pool.map(check, names)
 
 
 def removal_targets(selections, all_sources=False, path=None):
@@ -862,22 +899,21 @@ def main(argv=None):
         names = choose(args.action)
     failed = False
     if args.action in {"status", "doctor"}:
-        for name in names:
-            installations = detect_all(name)
+        for report in inspect_tools(names, args.timeout, latest_versions=args.action == 'status' and args.latest):
+            name, installations = report.name, report.installations
             if len(installations) > 1:
                 print(text(f'{name}: 检测到 {len(installations)} 处安装',
                            f'{name}: {len(installations)} installations detected'))
             published = ''
             if args.action == 'status' and args.latest:
-                try:
-                    published = f" {'source-latest' if name == 'zcode' else 'npm-latest'}={latest(name, args.timeout)}"
-                except (OSError, ValueError) as error:
-                    published = f' latest-query-failed={type(error).__name__}'
+                if report.latest_error:
+                    published = f' latest-query-failed={report.latest_error}'
                     failed = True
+                else:
+                    published = f" {'source-latest' if name == 'zcode' else 'npm-latest'}={report.published}"
             active = (shutil.which('qoderclicn') or shutil.which(name)) if name == 'qodercn' else shutil.which(name)
             active_target = str(Path(active).resolve()) if active else ''
-            for found in installations or [Installation()]:
-                current, bad_version = version(found)
+            for found, (current, bad_version) in report.versions or [(Installation(), ('-', False))]:
                 failed |= bad_version
                 state = text('已安装', 'Installed') if found.path else text('未安装', 'Not installed')
                 marker = text(' [当前]', ' [Active]') if active_target and active_target == found.target else ''
@@ -889,19 +925,14 @@ def main(argv=None):
                 print(f"{state} {text('依赖', 'dependency')}: {dependency}", flush=True)
                 failed |= not ok
             if not args.offline:
-                for name in names:
-                    try:
-                        fetch(
-                            TOOLS[name]["url"],
-                            timeout=args.timeout,
-                            limit=2 * 1024 * 1024,
-                        )
+                for name, error in check_endpoints(names, args.timeout):
+                    if not error:
                         print(text(f"正常 {name} 官方下载地址", f"OK {name} official download endpoint"), flush=True)
-                    except (OSError, ValueError) as error:
+                    else:
                         print(
                             text(
-                                f"失败 {name} 下载地址：{type(error).__name__}",
-                                f"FAIL {name} download endpoint: {type(error).__name__}",
+                                f"失败 {name} 下载地址：{error}",
+                                f"FAIL {name} download endpoint: {error}",
                             ),
                             flush=True,
                         )

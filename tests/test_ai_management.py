@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
@@ -251,6 +252,65 @@ elif args[0] == 'install':
 
 
 class VersionComparisonTests(unittest.TestCase):
+    def test_online_checks_overlap_and_preserve_tool_order(self):
+        names = list(ai.TOOLS)[:4]
+        for arguments in (['status', *names, '--latest'], ['update', *names, '--check']):
+            rendezvous = threading.Barrier(4)
+
+            def latest(name, timeout):
+                rendezvous.wait(timeout=2)
+                return '2.0.0'
+
+            with patch.object(ai, 'detect_all', side_effect=lambda name: [ai.Installation('/fixture/' + name, 'native')]), patch.object(ai, 'latest', side_effect=latest), patch.object(ai, 'version', return_value=('1.0.0', False)), patch.object(ai, 'execute', side_effect=AssertionError('check mutated installation')), redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(ai.main(arguments), 0)
+            rows = [line.split()[0] for line in output.getvalue().splitlines() if line.split()[0] in names]
+            self.assertEqual(rows, names)
+
+    def test_local_status_limits_parallel_version_probes_to_four(self):
+        rendezvous = threading.Barrier(4)
+        lock = threading.Lock()
+        active = maximum = 0
+
+        def version(found):
+            nonlocal active, maximum
+            with lock:
+                active += 1
+                maximum = max(active, maximum)
+            try:
+                rendezvous.wait(timeout=2)
+                return '1.0.0', False
+            finally:
+                with lock:
+                    active -= 1
+
+        with patch.object(ai, 'detect_all', side_effect=lambda name: [ai.Installation('/fixture/' + name, 'native')]), patch.object(ai, 'version', side_effect=version), patch.object(ai, 'fetch', side_effect=AssertionError('offline status queried network')), redirect_stdout(io.StringIO()):
+            self.assertEqual(ai.main(['status', '--all']), 0)
+        self.assertEqual(maximum, 4)
+
+    def test_ai_doctor_only_samples_download_endpoints(self):
+        def fetch(url, **kwargs):
+            self.assertTrue(kwargs.get('partial'), 'doctor downloaded a complete installer')
+            self.assertEqual(kwargs['limit'], 1024)
+            return b'#!/bin/sh\n'
+
+        with patch.object(ai, 'detect_all', return_value=[]), patch.object(ai.shutil, 'which', return_value='/fixture/dependency'), patch.object(ai, 'fetch', side_effect=fetch), redirect_stdout(io.StringIO()):
+            self.assertEqual(ai.main(['doctor', 'codex']), 0)
+
+    def test_ai_doctor_offline_skips_network_and_endpoint_failure_is_reported(self):
+        with patch.object(ai, 'detect_all', return_value=[]), patch.object(ai.shutil, 'which', return_value='/fixture/dependency'), patch.object(ai, 'fetch') as fetch, redirect_stdout(io.StringIO()) as output, patch.dict(os.environ, MACTOOLS_LANG='en'):
+            self.assertEqual(ai.main(['doctor', 'codex', 'claude', '--offline']), 0)
+            fetch.assert_not_called()
+
+            def endpoint(url, **kwargs):
+                if url == ai.TOOLS['codex']['url']:
+                    raise TimeoutError()
+                return b'#!/bin/sh\n'
+
+            fetch.side_effect = endpoint
+            self.assertEqual(ai.main(['doctor', 'codex', 'claude']), 1)
+        self.assertIn('FAIL codex download endpoint: TimeoutError', output.getvalue())
+        self.assertIn('OK claude official download endpoint', output.getvalue())
+
     def test_latest_rejects_non_version_registry_payloads(self):
         for payload in [b'[]', b'{"version":null}', b'{"version":42}', b'{"version":"not-a-version"}']:
             with self.subTest(payload=payload), patch.object(ai, 'fetch', return_value=payload), self.assertRaises(ValueError):
@@ -290,8 +350,14 @@ class VersionComparisonTests(unittest.TestCase):
 
     def test_failed_online_check_reports_error_and_continues_checks(self):
         found = ai.Installation('/fixture/client', 'native')
+
+        def latest(name, timeout):
+            if name == 'codex':
+                raise TimeoutError()
+            return '1.0.0'
+
         with patch.object(ai, 'detect_all', return_value=[found]), patch.object(
-            ai, 'latest', side_effect=[TimeoutError(), '1.0.0']
+            ai, 'latest', side_effect=latest
         ), patch.object(ai, 'version', return_value=('1.0.0', False)), redirect_stdout(io.StringIO()) as output, patch.dict(
             os.environ, MACTOOLS_LANG='en'
         ):
