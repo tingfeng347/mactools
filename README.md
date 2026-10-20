@@ -187,6 +187,8 @@ macc --cask --dry-run
 
 清理使用 Homebrew 自己的 `cleanup --dry-run`、`autoremove --dry-run` 展示预览。确认后执行对应原生命令；不清除应用数据，不使用 `--zap`。Formula 和 Cask 可分别筛选。
 
+清理菜单直接打开，选择后才读取对应类型的软件列表；预览只查询当前项目，单独选择 `autoremove` 时无需读取软件列表。执行前生成实时清理计划。
+
 ## 镜像源
 
 ```bash
@@ -253,6 +255,8 @@ ZCode CLI 按[智谱官方源码构建流程](https://github.com/zai-org/ZCode#r
 Homebrew 安装会根据目标文件识别真实的 Formula/Cask 名称及安装目录，避免 Intel 与 Apple Silicon 多套 Homebrew 互相误操作。相同可执行文件的软链合并为一处，多副本分别展示；不明来源拒绝自动更新或删除。卸载保留客户端配置、凭据与会话。
 
 `status --latest` / `update --check` 对 ZCode 比较官方源码版本，其余工具比较 npm 上游 SemVer，可能与 Homebrew 或原生发布渠道不同。没有 fzf 时，可直接指定 AI 客户端名称或 `--all`。AI 界面支持 Tab 多选、Ctrl+A 全选、Ctrl+D 取消、Enter 继续、Esc 退出。
+
+AI 状态、版本和联网诊断最多并行检查 4 个工具，结果仍按请求顺序显示；下载地址诊断只读取前 1 KiB。`status` 和 `doctor --offline` 不联网查询，安装、更新和卸载仍逐项执行。
 
 ## Shell 补全
 

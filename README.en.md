@@ -187,6 +187,8 @@ Diagnostics report dependencies, architecture, Homebrew prefix, Xcode Command Li
 
 Cleanup uses Homebrew's `cleanup --dry-run` and `autoremove --dry-run` for previews, then runs the corresponding native command after confirmation. It preserves application data and does not use `--zap`. Formulae and Casks can be filtered separately.
 
+The cleanup menu opens before querying installed packages. Selection and preview query only the chosen package type; `autoremove` needs no package listing. Execution uses a freshly generated cleanup plan.
+
 ## Mirrors
 
 ```bash
@@ -253,6 +255,8 @@ ZCode CLI follows the [official source-build workflow](https://github.com/zai-or
 Homebrew installations are identified by their actual target files, Formula/Cask names, and installation directories to avoid mixing Intel and Apple Silicon Homebrew installations. Symlinks to the same executable are merged into one entry; distinct copies are displayed separately. Unknown installation sources are not automatically updated or removed. Removal preserves client configuration, credentials, and sessions.
 
 `status --latest` and `update --check` compare the official source version for ZCode and upstream npm SemVer for other tools, which can differ from Homebrew or native release channels. Without fzf, specify client names or `--all` directly. The AI selector supports `Tab` to toggle selection, `Ctrl+A` to select all, `Ctrl+D` to deselect all, `Enter` to continue, and `Esc` to exit.
+
+AI status, version and connectivity checks run for up to four tools concurrently, with results displayed in request order. Download endpoint checks read only the first 1 KiB. Plain `status` and `doctor --offline` make no network queries; installation, updates and removal still run sequentially.
 
 ## Shell completion
 
