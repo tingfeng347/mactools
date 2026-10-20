@@ -177,19 +177,40 @@ macd
 macd --offline               # 仅本地检查
 macd --formula --timeout 5
 
-macc                         # 多选清理入口，先原生预览再确认
+macc                         # 多选清理入口，先预览再确认
 macc --list                  # 只列出清理入口
-macc --dry-run               # 执行原生 --dry-run 预览，不删除文件
+macc --dry-run               # 预览，不删除文件
 macc --cask --dry-run
+macc --dev                   # 仅开发工具和构建缓存
+macc npm-cache --dry-run     # 只预览 npm 下载缓存
+macc autoremove              # 预览并确认移除 Homebrew 无用依赖
+macc brew-cache --dry-run    # 预览 Homebrew 深度缓存清理
 ```
 
 诊断按 `OK` / `WARN` / `FAIL` / `SKIP` 输出依赖、架构、Homebrew 前缀、Xcode Command Line Tools、包列表、缓存年龄与联网结果，并显示耗时。`FAIL` 返回非零状态；缺失的可选工具记为 `SKIP`，Homebrew 自身的建议记为 `WARN`。
 
-清理使用 Homebrew 自己的 `cleanup --dry-run`、`autoremove --dry-run` 展示预览。确认后执行对应原生命令；不清除应用数据，不使用 `--zap`。Formula 和 Cask 可分别筛选。
+清理支持以下项目，确认后执行所选项：
+
+| 项目 ID | 清理范围 |
+| --- | --- |
+| `formula-cache` / `cask-cache` | 已安装软件的旧版本与 Homebrew 可清理缓存 |
+| `autoremove` | Homebrew 判定已不再需要的 Formula 依赖 |
+| `brew-cache` | Homebrew 全局深度清理：`cleanup --prune=all --scrub`；仍保留已安装软件的下载缓存 |
+| `pip-cache` | pip HTTP 和 wheel 缓存 |
+| `npm-cache` | npm 包下载缓存 |
+| `pnpm-store` | pnpm store 中无引用的包 |
+| `uv-cache` | uv 无引用缓存及缓存环境 |
+| `go-cache` | Go 构建缓存，保留模块下载 |
+| `ccache` | C/C++ 编译缓存，保留配置 |
+| `xcode-derived` | 默认 `~/Library/Developer/Xcode/DerivedData` 构建缓存，保留 Archives 和设备数据 |
+
+Homebrew 使用自己的 `--dry-run` 展示预览；开发缓存只查询目录并限时统计大小，不在预览时调用清理命令。显示的是当前缓存总量，并非预计回收量。缺失的可选工具显示 `SKIP`。再次安装或构建时可能重新生成缓存；清理 Xcode 前请停止构建。
+
+`--formula` / `--cask` 仅保留对应 Homebrew 项目；`--dev` 仅保留开发缓存，不依赖 Homebrew，不能与前两者合用。不清除应用数据、项目的 `node_modules` / `.venv`、源代码或 Xcode Archives，不使用 `--zap`。
 
 清理菜单直接打开，选择后才读取对应类型的软件列表；预览只查询当前项目，单独选择 `autoremove` 时无需读取软件列表。执行前生成实时清理计划。
 
-清理界面与 `maci` 保持一致：顶部搜索、对齐的类型/名称/范围列表，右侧展示清理说明和 Homebrew 预览。`Ctrl+/` 收起或展开详情，`Ctrl+A` 全选；重复的“尚未安装最新版”提示在详情中合并显示，执行前仍展示完整原生预览并确认。
+清理界面与 `maci` 保持一致：顶部搜索、对齐的类型/名称/范围列表，右侧展示清理说明和预览。`Ctrl+/` 收起或展开详情，`Ctrl+A` 全选；重复的“尚未安装最新版”提示在详情中合并显示，执行前仍展示完整计划并确认。
 
 ## 镜像源
 

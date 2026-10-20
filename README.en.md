@@ -179,17 +179,38 @@ macd --formula --timeout 5
 
 macc                         # Select cleanup actions, preview, then confirm
 macc --list                  # List cleanup actions only
-macc --dry-run               # Run native --dry-run previews without deleting files
+macc --dry-run               # Preview without deleting files
 macc --cask --dry-run
+macc --dev                   # Developer-tool and build caches only
+macc npm-cache --dry-run     # Preview npm downloads only
+macc autoremove              # Preview and confirm unused Homebrew dependencies
+macc brew-cache --dry-run    # Preview deep Homebrew cleanup
 ```
 
 Diagnostics report dependencies, architecture, Homebrew prefix, Xcode Command Line Tools, package lists, cache age, and connectivity using `OK`, `WARN`, `FAIL`, or `SKIP`, with elapsed time. `FAIL` returns a nonzero exit status. Missing optional tools are marked `SKIP`; Homebrew's own recommendations are marked `WARN`.
 
-Cleanup uses Homebrew's `cleanup --dry-run` and `autoremove --dry-run` for previews, then runs the corresponding native command after confirmation. It preserves application data and does not use `--zap`. Formulae and Casks can be filtered separately.
+Select from the following actions, then preview and confirm:
+
+| Action ID | Scope |
+| --- | --- |
+| `formula-cache` / `cask-cache` | Old installed versions and removable Homebrew caches |
+| `autoremove` | Formula dependencies Homebrew considers no longer needed |
+| `brew-cache` | Global Homebrew cleanup with `cleanup --prune=all --scrub`; downloads for installed packages are retained |
+| `pip-cache` | pip HTTP and wheel caches |
+| `npm-cache` | npm package downloads |
+| `pnpm-store` | Unreferenced packages in the pnpm store |
+| `uv-cache` | Dangling uv cache entries and cached environments |
+| `go-cache` | Go build cache, preserving downloaded modules |
+| `ccache` | C/C++ compilation cache, preserving configuration |
+| `xcode-derived` | Default `~/Library/Developer/Xcode/DerivedData` build cache, preserving Archives and device data |
+
+Homebrew uses its native `--dry-run`. Developer-cache previews only query paths and perform a bounded size scan; they never invoke cleanup commands. Sizes show current cache totals, not estimated savings. Missing optional tools show `SKIP`. Future installs or builds may recreate caches; stop Xcode builds before cleaning DerivedData.
+
+`--formula` / `--cask` restrict cleanup to the corresponding Homebrew actions. `--dev` selects developer caches without requiring Homebrew and cannot be combined with those flags. Cleanup preserves application data, project `node_modules` / `.venv`, sources and Xcode Archives, and does not use `--zap`.
 
 The cleanup menu opens before querying installed packages. Selection and preview query only the chosen package type; `autoremove` needs no package listing. Execution uses a freshly generated cleanup plan.
 
-The cleanup selector follows `maci`: search at the top, aligned type/name/scope columns, and descriptions with Homebrew previews on the right. Use `Ctrl+/` to toggle details and `Ctrl+A` to select all. Repeated warnings about packages without the latest version installed are grouped in the details pane; the full native preview and confirmation still appear before cleanup.
+The cleanup selector follows `maci`: search at the top, aligned type/name/scope columns, and descriptions with previews on the right. Use `Ctrl+/` to toggle details and `Ctrl+A` to select all. Repeated warnings about packages without the latest version installed are grouped in the details pane; the full plan and confirmation still appear before cleanup.
 
 ## Mirrors
 
