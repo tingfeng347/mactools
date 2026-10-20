@@ -32,7 +32,7 @@ install_mactools() {
     script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
     stage="$(mktemp -d "${TMPDIR:-/tmp}/mactools-install.XXXXXX")"
     trap "rm -rf -- $(printf '%q' "$stage")" EXIT
-    local files=(ma maci macr macu macd macc macm maca mactools.py mactools_runtime.py mactools_packages.py mactools_system.py mactools_cleanup.py mactools_mirror.py mactools_ai.py)
+    local files=(ma maci macr macu macd macc macm maca mactools.py mactools_runtime.py mactools_packages.py mactools_system.py mactools_cleanup.py mactools_mole.py mactools_mole.zip mactools_mirror.py mactools_ai.py)
     local local_ready=true
     for file in "${files[@]}"; do
         [[ -s "$script_dir/bin/$file" ]] || local_ready=false
@@ -61,11 +61,13 @@ install_mactools() {
     [[ "$ready" == true ]] || { echo 'Download incomplete; existing installation untouched.' >&2; return 1; }
     python3 - "$stage/bin" "$bin_dir" "$dry_run" <<'PY'
 import ast
+import hashlib
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 source, target = map(Path, sys.argv[1:3])
@@ -75,6 +77,15 @@ files = sorted(source.iterdir(), key=lambda p: p.name == 'ma')
 for path in files:
     if path.suffix == '.py':
         ast.parse(path.read_text(), filename=str(path))
+    elif path.name == 'mactools_mole.zip':
+        tree = ast.parse((source / 'mactools_mole.py').read_text())
+        digest = next(ast.literal_eval(node.value) for node in tree.body
+                      if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'BUNDLE_SHA256' for t in node.targets))
+        if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            raise SystemExit('Invalid Mole source bundle checksum')
+        with zipfile.ZipFile(path) as archive:
+            if archive.testzip() or not {'LICENSE', 'NOTICE.md', 'mactools-bridge.sh', 'bin/clean.sh'} <= set(archive.namelist()):
+                raise SystemExit('Incomplete Mole source bundle')
     else:
         if not path.read_bytes().startswith(b'#!/bin/bash\n'):
             raise SystemExit(f'Invalid launcher: {path.name}')
@@ -98,7 +109,7 @@ with tempfile.TemporaryDirectory(prefix='.mactools-stage-', dir=target) as tempo
             existed.append(path.name)
         staged = temp / path.name
         shutil.copyfile(path, staged)
-        staged.chmod(0o644 if path.suffix == '.py' else 0o755)
+        staged.chmod(0o644 if path.suffix in ('.py', '.zip') else 0o755)
     try:
         for path in files:
             os.replace(temp / path.name, target / path.name)

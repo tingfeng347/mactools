@@ -143,6 +143,7 @@ class Install(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((target / 'ma').exists())
         self.assertFalse((target / 'mactools_cleanup.py').exists())
+        self.assertFalse((target / 'mactools_mole.zip').exists())
         self.assertEqual((target / 'unrelated').read_text(), 'preserve')
         self.assertEqual(marker.read_text(), 'en\n')
 
@@ -204,6 +205,32 @@ os.replace = replace
         self.assertEqual((target / 'maci').readlink(), original)
         self.assertEqual((target / 'macr').read_text(), 'old remove command')
         self.assertEqual({p.name for p in target.iterdir()}, {'maci', 'macr'})
+
+    def test_modified_mole_bundle_never_replaces_installation(self):
+        import shutil
+        source = self.root / 'bundle-source'
+        shutil.copytree(ROOT / 'bin', source / 'bin')
+        shutil.copyfile(ROOT / 'install.sh', source / 'install.sh')
+        (source / 'bin/mactools_mole.zip').write_bytes(b'broken bundle')
+        target = self.root / 'existing-bundle-bin'
+        target.mkdir()
+        (target / 'ma').write_text('old')
+        result = subprocess.run(['/bin/bash', str(source / 'install.sh'), '--bin-dir', str(target)],
+                                env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Invalid Mole source bundle', result.stderr)
+        self.assertEqual((target / 'ma').read_text(), 'old')
+        self.assertEqual(list(target.iterdir()), [target / 'ma'])
+
+    def test_installed_mole_runs_without_reference_checkout(self):
+        target = self.root / 'standalone-bin'
+        result = self.script('install.sh', '--bin-dir', str(target))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((target / 'mactools_mole.zip').is_file())
+        self.env.update(HOME=str(self.root), MOLE_TEST_NO_AUTH='1')
+        result = self.invoke('clean', '--exact', 'frontend-cache', '--dry-run', executable=target / 'ma')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Mole', result.stdout)
 
     def test_uninstall_cache_only_removes_mactools_child(self):
         cache = self.root / 'cache/mactools'

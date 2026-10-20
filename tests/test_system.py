@@ -20,6 +20,10 @@ class SystemTests(unittest.TestCase):
         patcher = patch.object(system, 'development_plan', return_value=None)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # These tests cover Homebrew; Mole integration has its own isolated HOME.
+        patcher = patch.object(system, 'mole_info', return_value={})
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def fake_run(self, argv, **kwargs):
         self.commands.append((argv, kwargs))

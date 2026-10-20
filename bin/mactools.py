@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mactools_runtime import atomic_write, config_dir, text
 
-VERSION = "0.1.12"
+VERSION = "0.1.13"
 COMMANDS = {
     "install": "maci", "remove": "macr", "update": "macu", "doctor": "macd",
     "clean": "macc", "mirror": "macm", "ai": "maca",
@@ -80,8 +80,9 @@ Run ma <command> --help for command help.""")
 def completion(shell):
     # All candidates are constants: no subprocess/network/package queries during completion.
     actions = " ".join(COMMANDS) + " setup completion help"
+    from mactools_mole import mole_info
     clean_actions = ('formula-cache cask-cache autoremove brew-cache pip-cache npm-cache '
-                     'pnpm-store uv-cache go-cache ccache xcode-derived')
+                     'pnpm-store uv-cache go-cache ccache xcode-derived ' + ' '.join(mole_info()))
     if shell == "bash":
         print('''_mactools_complete() {
     local words cur action

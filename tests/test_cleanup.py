@@ -44,7 +44,9 @@ class DeveloperCleanupTests(unittest.TestCase):
     def test_dev_filter_and_scope_flags(self):
         with contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(system.main(['clean', '--dev', '--generate']), 0)
-        self.assertEqual(output.getvalue().splitlines(), list(cleanup.cache_info()))
+        from mactools_mole import mole_info, MOLE_DEV_ACTIONS
+        self.assertEqual(output.getvalue().splitlines(), list(cleanup.cache_info()) +
+                         [name for name in mole_info() if name in MOLE_DEV_ACTIONS])
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             system.main(['clean', '--dev', '--cask'])
 
