@@ -29,13 +29,13 @@ Supports Intel and Apple Silicon, works with macOS system Bash 3.2, and uses the
 
 ## Interface demo
 
-Search, selection, and package details: Blue marks official Homebrew sources; purple marks third-party taps. Types use `formula` / `cask`; names are white, with a green `✓` beside installed versions. the name heading is centered, package names are left aligned, and versions are right aligned. Use `Tab` to select multiple packages and `Ctrl+/` to toggle details.
+Search, selection, and package details: Blue marks official Homebrew sources; purple marks third-party taps. Types use `formula` / `cask` (`app` for native applications); names are white, with a green `✓` beside installed versions. The name heading is centered, package names are left aligned, and versions are right aligned. Use `Tab` to select multiple packages and `Ctrl+/` to toggle details.
 
 ![maci searching for Firefox with Homebrew package details on the right](docs/images/install-status.png)
 
 Commands and shortcuts:
 
-![ma help showing seven features and their shortcuts](docs/images/commands-color.png)
+![ma help showing features and their shortcuts](docs/images/commands-color.png)
 
 ## Install and uninstall
 
@@ -109,10 +109,11 @@ The standalone installer tries GitHub Raw and then jsDelivr, downloading and val
 | Feature | Full command | Shortcut |
 |---|---|---|
 | Search and install packages | `ma install` | `maci` |
-| Search and remove packages | `ma remove` | `macr` |
+| Remove packages, apps and leftovers | `ma remove` | `macr` |
 | Review and update packages | `ma update` | `macu` |
 | Check environment, caches, and connectivity | `ma doctor` | `macd` |
 | Preview and clean disk space | `ma clean` | `macc` |
+| Refresh caches and services, optimize system | `ma optimize` | `maco` |
 | Benchmark, switch, and restore mirrors | `ma mirror` | `macm` |
 | Manage AI coding tools | `ma ai` | `maca` |
 
@@ -139,7 +140,10 @@ maci --list firefox          # List matches without opening the selector
 maci --refresh               # Fetch the name catalog again
 
 macr                        # Select multiple installed packages
-macr --cask firefox
+macr                        # Native apps first, then Homebrew packages
+macr --apps                 # Native applications and leftovers only
+macr --apps --app-data       # Include personal data in the reviewed plan
+macr --cask firefox          # Homebrew casks only
 macr --dry-run firefox      # Show the removal plan after selection
 
 macu                        # Select updates with current and target versions
@@ -163,6 +167,8 @@ Keyboard hints and column headings appear on separate lines. Chinese mode distin
 | `Ctrl+E` | Switch between contiguous substring and fuzzy matching |
 | `Ctrl+/` | Show / hide package details |
 | `Esc` | Exit and stop background package queries |
+
+`macr` places native applications first with yellow `app` labels and white names. Homebrew `cask` / `formula` colors remain blue or purple. Application removal reuses Mole source and previews bundles and leftovers before confirmation. Personal preferences and support data are kept by default; `--app-data` includes them in the plan. Native files move to Trash; Homebrew apps use `brew uninstall --cask`. Selecting both views of one app uninstalls it once. Any need for administrator access or quitting a running app is shown in the preview and acted on after confirmation. Explicit `--formula` / `--cask` filters select Homebrew packages; `--apps` selects native apps and can be combined with either filter.
 
 `maci`, `macu` and `macr` first show a list snapshot from the last 24 hours, then refresh it in the background without restarting the selector. First use still loads live data. Search and selection remain available during refresh; recent fzf versions retain selected packages. Pressing Enter early waits for the refresh to verify the selection. Removed packages and updates no longer needed are skipped; cached state never authorizes a package change. Single-type `--formula` / `--cask` selectors can reuse a combined snapshot, and live queries request only the required type. Switching details cancels the old preview query to avoid accumulating background work. Name catalogs are cached for one hour; `Ctrl+R` forces a catalog refresh. Cache defaults to `~/Library/Caches/mactools` and respects `XDG_CACHE_HOME`. `--list` always uses live state. `--list` and `--dry-run` neither write mactools cache nor change packages.
 
@@ -217,18 +223,54 @@ Select from the following actions, then preview and confirm:
 | `project-cache` | Rebuildable project caches, with tracked-file and nested-repository guards |
 | `project-artifacts` | Dependencies and build output inactive for at least 7 days and passing activity/content checks |
 | `installers` | Installer DMG, PKG, ISO, XIP and similar files under home; ZIPs must contain installer content |
+| `trash` / `saved-state` | Trash and closed-app window restoration state |
+| `recent-items` / `finder-metadata` | Review recent records and Finder metadata; preserve history and `.DS_Store` protected by Mole |
+| `mail-downloads` / `incomplete-downloads` | Old Mail download copies and idle incomplete downloads |
+| `old-app-versions` / `orphan-app-data` / `orphan-services` | Old app versions, app leftovers and stale system registrations |
+| `system-cache` / `group-cache` / `silicon-cache` | Old system, group container and Rosetta / Metal caches |
+| `device-firmware` / `failed-backups` | Old firmware downloads and stale inactive incomplete backups |
+| `mobile-cache` / `toolbox-cache` / `nix-garbage` | Unavailable simulators and device support, old Toolbox versions and dead Nix store paths |
+| `local-snapshots` / `system-updates` / `large-files` | Review snapshots, update staging and large files without automatic deletion |
+| `periodic-maintenance` / `disk-verify` | System periodic tasks and filesystem verification; disk verification requires `MOLE_ENABLE_DISK_VERIFY=1` |
 
 Homebrew uses its native `--dry-run`. Developer-cache previews only query paths and perform a bounded size scan; they never invoke cleanup commands. Sizes show current cache totals, not estimated savings. Missing optional tools show `SKIP`. Future installs or builds may recreate caches; stop Xcode builds before cleaning DerivedData.
 
-`--formula` / `--cask` restrict cleanup to the corresponding Homebrew actions. `--dev` selects developer actions without requiring Homebrew and cannot be combined with those flags. Cleanup preserves application user data, sources and Xcode Archives, and does not use `--zap`. `project-artifacts` can remove eligible inactive `node_modules`, `.venv`, `target`, `dist` and similar directories after preview and confirmation; dependencies or build output will need to be recreated.
+`--formula` / `--cask` restrict cleanup to the corresponding Homebrew actions. `--dev` selects developer actions without requiring Homebrew and cannot be combined with those flags. Cleanup does not use `--zap`. Ordinary cache actions preserve personal app data, sources and Xcode Archives. Trash, Mail downloads, recent items and saved state are separate opt-in categories that identify the affected data. `project-artifacts` can remove eligible inactive `node_modules`, `.venv`, `target`, `dist` and similar directories after preview and confirmation; dependencies or build output will need to be recreated.
 
-Extended cleanup bundles and reuses [Mole](https://github.com/tw93/Mole) source; no separate Mole installation is required. Upstream whitelist, process, open-file and path guards are retained. Preview scans without deleting; apply additionally checks the previewed target identities and skips new or replaced targets. mactools provides the selector and confirmation; detailed Mole diagnostics retain upstream English text. Cleanup neither requests nor reuses administrator access, empties Trash, removes recent-document records/mail attachments, or touches system snapshots and OS update staging.
+Extended cleanup bundles and reuses [Mole](https://github.com/tw93/Mole) source; no separate Mole installation is required. Upstream whitelist, process, open-file and path guards are retained. Preview scans without deleting; apply additionally checks the previewed target identities and skips new or replaced targets. mactools provides the selector and confirmation; detailed Mole diagnostics retain upstream English text. System cache and orphan-service actions request administrator access after confirmation when needed; previews do not request access. Snapshot, OS update staging and large-file actions only review or suggest candidates without deleting them, matching the vendored Mole version.
 
 Protect paths in `~/.config/mactools/mole/whitelist`, one absolute path per line (`~` is supported). Cleanup records are under `~/Library/Logs/mactools/mole/`, isolated from a separate Mole installation. Preview can write tool-owned diagnostics and temporary scan files, but never deletes cleanup targets. See [Mole integration](docs/MOLE.md) for the pinned source, coverage and rebuild steps. Distributed under [GPL-3.0](LICENSE); attribution is in [NOTICE](NOTICE.md).
 
 The cleanup menu opens before querying installed packages. Selection and preview query only the chosen package type; `autoremove` needs no package listing. Execution uses a freshly generated cleanup plan.
 
 The cleanup selector follows `maci`: search at the top, aligned type/name/scope columns, and descriptions with previews on the right. Use `Ctrl+/` to toggle details and `Ctrl+A` to select all. Repeated warnings about packages without the latest version installed are grouped in the details pane; the full plan and confirmation still appear before cleanup.
+
+## System optimization
+
+```bash
+maco                              # Select tasks, preview, then confirm
+ma optimize --list                # List tasks without scanning the system
+maco cache-refresh --dry-run      # Preview QuickLook and icon-cache refresh
+maco network-optimization         # Refresh DNS after VPN checks
+maco sqlite-vacuum --dry-run      # Preview database compaction
+```
+
+Reuses Mole's 19 optimization tasks without a separate `mo` installation. The selector follows the `maci` search, multi-select and detail layout. Opening it performs no optimization. `--dry-run` previews only; confirmed runs execute selected tasks and request administrator access only when needed. Noninteractive runs default to preview; applying requires explicit `--yes`.
+
+| Tasks | Effects |
+| --- | --- |
+| `cache-refresh` / `saved-state-cleanup` | Refresh QuickLook and icon caches; remove app states older than 30 days |
+| `fix-broken-configs` / `shared-file-list-repair` | Repair corrupted preferences and eligible Finder shared lists; preserve recent-document data |
+| `network-optimization` / `network-stack-optimize` | Refresh DNS, routing and ARP caches; may briefly reconnect networking; retains VPN checks |
+| `sqlite-vacuum` | Compact Mail, Safari and Messages databases; skip running apps |
+| `prevent-network-dsstore` / `legacy-overrides-audit` | Set persistent Finder preferences for network/external volumes; audit old hidden overrides |
+| `disk-permissions-repair` | Detect and repair user-directory permissions using upstream rules |
+| `spotlight-index-optimize` / `spotlight-orphan-rules-cleanup` | Rebuild Spotlight indexes when needed; remove orphaned app search rules |
+| `periodic-maintenance` / `disk-verify` | Run supported maintenance; explicitly enabled filesystem verification does not repair disks |
+| `login-items-audit` / `launch-agents-cleanup` | Audit broken login items and LaunchAgents, retaining upstream report-only behavior |
+| `quarantine-cleanup` / `notification-cleanup` / `coreduet-cleanup` | Process download tracking, old notifications and usage records using upstream rules |
+
+Details and the final preview explain persistent preference changes, history processing and service refreshes. Filesystem verification requires `MOLE_ENABLE_DISK_VERIFY=1`. Detailed diagnostics retain upstream wording. See [Mole integration](docs/MOLE.md) for source and protection details.
 
 ## Mirrors
 
@@ -313,7 +355,7 @@ source <(ma completion zsh)
 ma completion fish | source
 ```
 
-Completion covers `ma` and all seven shortcuts, without network queries during completion.
+Completion covers `ma` and all eight shortcuts, without network queries during completion.
 
 ## Porting and validation
 

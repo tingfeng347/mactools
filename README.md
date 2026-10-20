@@ -35,7 +35,7 @@ ma ai install --all --dry-run
 
 完整命令和快捷入口：
 
-![ma 帮助界面，展示七项功能及对应缩写](docs/images/commands-color.png)
+![ma 帮助界面，展示功能及对应缩写](docs/images/commands-color.png)
 
 ## 安装与卸载
 
@@ -109,10 +109,11 @@ bash uninstall.sh --bin-dir "$HOME/bin"
 | 功能 | 完整命令 | 缩写 |
 |---|---|---|
 | 搜索并安装软件 | `ma install` | `maci` |
-| 搜索并卸载软件 | `ma remove` | `macr` |
+| 卸载软件、应用及其残留 | `ma remove` | `macr` |
 | 查看并更新软件 | `ma update` | `macu` |
 | 环境、缓存和连通性检查 | `ma doctor` | `macd` |
 | 预览并清理空间 | `ma clean` | `macc` |
+| 刷新缓存与服务、系统优化 | `ma optimize` | `maco` |
 | 镜像源测速、切换和恢复 | `ma mirror` | `macm` |
 | AI 编程工具管理 | `ma ai` | `maca` |
 
@@ -139,7 +140,10 @@ maci --list firefox          # 只列出匹配项，不进入交互
 maci --refresh               # 重新获取名称目录
 
 macr                        # 多选已安装软件
-macr --cask firefox
+macr                        # 本机应用排在前面，随后是 Homebrew 软件
+macr --apps                 # 只选择本机应用及残留
+macr --apps --app-data       # 同时预览个人数据，确认后卸载
+macr --cask firefox          # 仅 Homebrew cask
 macr --dry-run firefox      # 选择后只显示卸载计划
 
 macu                        # 新旧版本列表，多选更新
@@ -153,7 +157,7 @@ macu --refresh-index        # 先确认并执行 brew update，再查看更新
 
 安装界面展示来源、名称和已安装版本，预览区显示 Homebrew 软件详情。更新界面展示已安装版本和目标版本。搜索只匹配名称，来源、版本和安装状态不参与匹配。
 
-界面将操作提示与列标题分行显示，中文模式以“工具 / 应用”区分软件类型。宽终端在右侧展示详情，较窄终端将详情放到底部；预览字段遵循界面语言，软件名称和上游简介保留原文。
+界面将操作提示与列标题分行显示，软件类型显示为 `formula` / `cask`，本机应用显示为 `app`。宽终端在右侧展示详情，较窄终端将详情放到底部；预览字段遵循界面语言，软件名称和上游简介保留原文。
 
 | 按键 | 操作 |
 |---|---|
@@ -163,6 +167,8 @@ macu --refresh-index        # 先确认并执行 brew update，再查看更新
 | `Ctrl+E` | 切换连续子串 / 模糊匹配 |
 | `Ctrl+/` | 显示 / 收起软件详情 |
 | `Esc` | 退出并终止后台列表查询 |
+
+`macr` 的本机应用使用黄色 `app` 标识并排在列表前面，名称保持白色；Homebrew 的 `cask` / `formula` 仍使用蓝色或紫色。应用卸载复用 Mole 源码，确认前列出应用本体及残留；默认保留个人偏好与支持数据，`--app-data` 才将这些数据纳入计划。本机文件移到废纸篓，Homebrew 管理的应用由 `brew uninstall --cask` 卸载；同时选择应用与对应 cask 时只执行一次。需要管理员权限或退出运行中的应用时，会在预览中说明，确认后才执行。`--formula` / `--cask` 单独使用时只选择对应 Homebrew 类型，`--apps` 只列本机应用，也可与这两个选项组合。
 
 `maci`、`macu`、`macr` 优先显示最近 24 小时内的列表快照，后台重新查询并动态替换列表；首次使用仍需加载数据。刷新期间可以继续搜索和多选，新版 fzf 会保留已选软件。提前按 Enter 时会等待后台核对完成，已卸载或不再需要更新的软件会跳过；缓存不会直接决定包变更。单独筛选 `--formula` / `--cask` 时也可复用完整列表缓存，实时查询只读取所需类型。切换详情会停止旧的预览查询，避免后台查询积压。名称目录缓存一小时，`Ctrl+R` 会强制刷新目录。缓存默认在 `~/Library/Caches/mactools`，遵循 `XDG_CACHE_HOME`。`--list` 始终读取实时状态，`--list` 与 `--dry-run` 不写工具缓存，也不执行包变更。
 
@@ -217,18 +223,54 @@ macc project-artifacts --dry-run # 闲置项目依赖与构建产物
 | `project-cache` | 项目可再生缓存，检查 Git 跟踪文件和嵌套仓库 |
 | `project-artifacts` | 至少闲置 7 天、通过活动与内容检查的项目依赖和构建目录 |
 | `installers` | 用户目录中的 DMG、PKG、ISO、XIP 等安装包；ZIP 仅识别含安装内容的压缩包 |
+| `trash` / `saved-state` | 废纸篓、已关闭应用的窗口恢复状态 |
+| `recent-items` / `finder-metadata` | 检查最近记录与 Finder 元数据，保留 Mole 强制保护的记录和 `.DS_Store` |
+| `mail-downloads` / `incomplete-downloads` | 旧邮件下载副本、闲置的未完成下载 |
+| `old-app-versions` / `orphan-app-data` / `orphan-services` | 应用旧版本、卸载残留及失效的系统服务注册 |
+| `system-cache` / `group-cache` / `silicon-cache` | 系统旧缓存、共享容器及 Rosetta / Metal 缓存 |
+| `device-firmware` / `failed-backups` | 旧设备固件下载、过期且非活动的未完成备份 |
+| `mobile-cache` / `toolbox-cache` / `nix-garbage` | 无效模拟器与设备支持、Toolbox 旧版本、Nix 无引用存储 |
+| `local-snapshots` / `system-updates` / `large-files` | 检查快照、更新暂存及大文件，不自动删除 |
+| `periodic-maintenance` / `disk-verify` | 系统定期维护、磁盘文件系统检查；磁盘检查需 `MOLE_ENABLE_DISK_VERIFY=1` |
 
 Homebrew 使用自己的 `--dry-run` 展示预览；开发缓存只查询目录并限时统计大小，不在预览时调用清理命令。显示的是当前缓存总量，并非预计回收量。缺失的可选工具显示 `SKIP`。再次安装或构建时可能重新生成缓存；清理 Xcode 前请停止构建。
 
-`--formula` / `--cask` 仅保留对应 Homebrew 项目；`--dev` 仅保留开发相关项目，不依赖 Homebrew，不能与前两者合用。不清除应用用户数据、源代码或 Xcode Archives，不使用 `--zap`。`project-artifacts` 会列出符合规则的闲置 `node_modules`、`.venv`、`target`、`dist` 等目录，确认后删除；以后需要重新安装依赖或构建。
+`--formula` / `--cask` 仅保留对应 Homebrew 项目；`--dev` 仅保留开发相关项目，不依赖 Homebrew，不能与前两者合用。不使用 `--zap`；普通缓存类别保留应用个人数据、源代码和 Xcode Archives。废纸篓、邮件下载、最近使用记录、保存状态等独立类别会明确列出对应数据，请按需选择。`project-artifacts` 会列出符合规则的闲置 `node_modules`、`.venv`、`target`、`dist` 等目录，确认后删除；以后需要重新安装依赖或构建。
 
-扩展清理直接复用 [Mole](https://github.com/tw93/Mole) 的源码，随 mactools 打包，无需另外安装 Mole。保留上游的白名单、进程、打开文件和路径保护，预览只扫描；执行时还核对预览记录中的目标身份，新出现或被替换的目标会跳过。菜单和确认仍由 mactools 提供，Mole 的详细诊断保留上游英文输出。清理不会请求或复用管理员权限，不清空废纸篓，不删最近文档记录、邮件附件、系统快照或软件更新文件。
+扩展清理直接复用 [Mole](https://github.com/tw93/Mole) 的源码，随 mactools 打包，无需另外安装 Mole。保留上游的白名单、进程、打开文件和路径保护，预览只扫描；执行时还核对预览记录中的目标身份，新出现或被替换的目标会跳过。菜单和确认仍由 mactools 提供，Mole 的详细诊断保留上游英文输出。系统缓存、失效服务等项目在确认后按需申请管理员权限，预览不申请权限。系统快照、系统更新暂存和大文件类别仅检查或列出建议，不自动删除；这与所复用的 Mole 版本一致。
 
 自定义保护路径写入 `~/.config/mactools/mole/whitelist`（每行一个绝对路径，支持 `~`）。清理记录保存在 `~/Library/Logs/mactools/mole/`，与独立安装的 Mole 分开。预览也可能写入本工具的诊断记录及临时扫描文件，但不会删除清理目标。源码固定版本、接入范围与重建方法见 [Mole 接入说明](docs/MOLE.md)。项目采用 [GPL-3.0](LICENSE)，上游归属见 [NOTICE](NOTICE.md)。
 
 清理菜单直接打开，选择后才读取对应类型的软件列表；预览只查询当前项目，单独选择 `autoremove` 时无需读取软件列表。执行前生成实时清理计划。
 
 清理界面与 `maci` 保持一致：顶部搜索、对齐的类型/名称/范围列表，右侧展示清理说明和预览。`Ctrl+/` 收起或展开详情，`Ctrl+A` 全选；重复的“尚未安装最新版”提示在详情中合并显示，执行前仍展示完整计划并确认。
+
+## 系统优化
+
+```bash
+maco                              # 选择优化任务，先预览再确认
+ma optimize --list                # 列出任务，不扫描系统
+maco cache-refresh --dry-run      # 预览 QuickLook 和图标缓存刷新
+maco network-optimization         # 检查 VPN 后刷新 DNS 缓存
+maco sqlite-vacuum --dry-run      # 预览数据库整理，保留运行中应用保护
+```
+
+复用 Mole 的 19 项优化任务，无需另外安装 `mo`。列表沿用 `maci` 的搜索、多选与详情布局，按需选择，不在打开界面时执行优化。`--dry-run` 只预览；确认后只运行所选任务，必要时申请管理员权限。非交互环境默认只预览，自动执行需显式 `--yes`。
+
+| 任务 | 操作与影响 |
+| --- | --- |
+| `cache-refresh` / `saved-state-cleanup` | 刷新 QuickLook、图标缓存；清理超过 30 天的应用保存状态 |
+| `fix-broken-configs` / `shared-file-list-repair` | 检查并修复损坏偏好与可修复的 Finder 共享列表，保留最近文件数据 |
+| `network-optimization` / `network-stack-optimize` | DNS、路由与 ARP 刷新；网络可能短暂重连，保留 VPN 检查 |
+| `sqlite-vacuum` | 整理 Mail、Safari、Messages 等数据库；应用运行中跳过 |
+| `prevent-network-dsstore` / `legacy-overrides-audit` | 调整网络与外接卷的 Finder 偏好；检查旧优化工具遗留的隐藏设置 |
+| `disk-permissions-repair` | 按上游检测修复用户目录权限 |
+| `spotlight-index-optimize` / `spotlight-orphan-rules-cleanup` | 按需重建 Spotlight 索引、移除失效的应用搜索规则 |
+| `periodic-maintenance` / `disk-verify` | 系统支持时执行定期维护；显式启用后校验文件系统，不修复磁盘 |
+| `login-items-audit` / `launch-agents-cleanup` | 检查失效登录项与 LaunchAgents，保留上游仅报告行为 |
+| `quarantine-cleanup` / `notification-cleanup` / `coreduet-cleanup` | 按上游规则整理下载跟踪、旧通知及使用记录；预览会说明涉及的数据 |
+
+部分任务会修改持久偏好、历史记录或刷新服务，具体影响会在详情和确认前展示。磁盘检查需要 `MOLE_ENABLE_DISK_VERIFY=1`。详细诊断保留 Mole 原文；保护规则与源码说明见 [Mole 接入说明](docs/MOLE.md)。
 
 ## 镜像源
 
@@ -313,7 +355,7 @@ source <(ma completion zsh)
 ma completion fish | source
 ```
 
-补全覆盖 `ma` 和七个缩写入口，不在补全期间联网查询。
+补全覆盖 `ma` 和八个缩写入口，不在补全期间联网查询。
 
 ## 移植与验证
 
