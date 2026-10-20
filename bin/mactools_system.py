@@ -2,6 +2,7 @@
 import argparse
 import os
 import platform
+import re
 import shlex
 import shutil
 import subprocess
@@ -10,6 +11,7 @@ import time
 from pathlib import Path
 
 from mactools_runtime import brew_env, brew_path, cache_dir, command, confirm, fetch, run, text
+from mactools_packages import cell, clip_cell, selector_widths, without_color
 
 
 def positive(value):
@@ -125,6 +127,119 @@ def cleanup_actions(brew, args, choices):
     return actions
 
 
+def cleanup_info(name):
+    return {
+        'formula-cache': ('formula', text('Formula 缓存', 'Formula cache'),
+                          text('缓存与旧版本', 'Cache / old versions'),
+                          text('清理已安装 Formula 的旧版本和下载缓存。',
+                               'Clean old versions and downloads for installed formulae.')),
+        'cask-cache': ('cask', text('Cask 缓存', 'Cask cache'),
+                       text('缓存与旧版本', 'Cache / old versions'),
+                       text('清理已安装 Cask 的旧版本和下载缓存。',
+                            'Clean old versions and downloads for installed casks.')),
+        'autoremove': ('formula', text('无用依赖', 'Unused dependencies'),
+                       text('未使用的依赖', 'Unused dependencies'),
+                       text('移除 Homebrew 判定已不再需要的 Formula 依赖。',
+                            'Remove formula dependencies Homebrew considers no longer needed.')),
+    }[name]
+
+
+def cleanup_rows(choices):
+    name_width, _ = selector_widths('install')
+    scope_width = 20
+    rows = []
+    colored = not os.environ.get('NO_COLOR') and os.environ.get('TERM') != 'dumb'
+    for name in choices:
+        kind, title, scope, _ = cleanup_info(name)
+        kind_cell = cell(kind, 8)
+        if colored:
+            kind_cell = '\033[38;5;75m' + kind_cell + '\033[0m'
+        visible = (kind_cell + '\t' + cell(clip_cell(title, name_width), name_width) + '\t' +
+                   cell(clip_cell(scope, scope_width), scope_width, right=True))
+        rows.append('\t'.join((name, kind, title, scope, visible)))
+    headings = (cell(text('类型', 'Type'), 8) + ' ' +
+                cell(text('名称', 'Name'), name_width, center=True) + ' ' +
+                cell(text('清理范围', 'Scope'), scope_width, right=True))
+    return rows, headings
+
+
+def choose_cleanup(args, choices):
+    query, exact = '', args.exact
+    preview = shlex.join([sys.executable, str(Path(__file__).resolve()), 'clean',
+                          '--timeout', str(args.timeout), '--preview-action']) + ' {1}'
+    env = brew_env()
+    env.pop('FZF_DEFAULT_OPTS', None)
+    env.pop('FZF_DEFAULT_OPTS_FILE', None)
+    env['SHELL'] = '/bin/sh'
+    while True:
+        rows, headings = cleanup_rows(choices)
+        header = text('Tab 多选  Enter 确认  Ctrl+R 刷新  Ctrl+E 匹配  Ctrl+/ 详情  Esc 退出',
+                      'Tab select  Enter confirm  Ctrl+R refresh  Ctrl+E match  Ctrl+/ details  Esc exit')
+        argv = ['fzf', '--ansi', '--multi', '--delimiter=\t', '--nth=2',
+                '--with-nth=5..', '--tabstop=1', '--print-query', '--expect=ctrl-e,ctrl-r',
+                '--query=' + query, '--height=95%', '--layout=reverse', '--border',
+                '--tiebreak=index', '--info=hidden', '--preview=' + preview,
+                '--preview-window=right:42%:wrap:<50(down:35%:wrap)',
+                '--prompt=' + text('搜索 › ', 'Search › '),
+                '--bind=tab:toggle+down,shift-tab:toggle+up,ctrl-a:select-all,alt-j:last,alt-k:first,ctrl-/:toggle-preview',
+                '--header=' + header + '\n\n' + headings]
+        if exact:
+            argv.append('--exact')
+        result = run(argv, input='\n'.join(rows) + '\n', text=True,
+                     stdout=subprocess.PIPE, env=env, timeout=86400)
+        if result.returncode in (1, 130):
+            return [], 0
+        if result.returncode:
+            return [], result.returncode
+        fields = result.stdout.splitlines()
+        query = fields[0] if fields else ''
+        key = fields[1] if len(fields) > 1 else ''
+        if key in ('ctrl-e', 'ctrl-r'):
+            if key == 'ctrl-e':
+                exact = not exact
+            continue
+        allowed = {without_color(row): row.split('\t', 1)[0] for row in rows}
+        selected = []
+        for row in fields[2:]:
+            if without_color(row) not in allowed:
+                raise ValueError('invalid cleanup selection')
+            selected.append(allowed[without_color(row)])
+        return [name for name in choices if name in selected], 0
+
+
+def preview_cleanup(args):
+    name = args.preview_action
+    kind, title, _, description = cleanup_info(name)
+    print(f'{title} · {kind}\n\n{description}\n')
+    print(text('Homebrew 预览 · 回车核对，确认后执行',
+               'Homebrew preview · Enter to review, then confirm'), flush=True)
+    actions = cleanup_actions(brew_path(), args, [name])
+    if not actions:
+        print(text('没有可清理的已安装软件。', 'No installed packages to clean.'))
+        return 0
+    for _, argv in actions:
+        result = run(argv[:2] + ['--dry-run'] + argv[2:], timeout=args.timeout,
+                     env=brew_env(), capture_output=True, text=True)
+        skipped, lines = 0, []
+        for output in (result.stdout, result.stderr):
+            for line in (output or '').splitlines():
+                if (result.returncode == 0 and
+                        re.match(r'^Warning: Skipping .+: most recent version .+ not installed\s*$', without_color(line))):
+                    skipped += 1
+                else:
+                    lines.append(line)
+        if skipped:
+            print(text(f'{skipped} 项尚未安装最新版，Homebrew 已跳过对应旧版本清理。',
+                       f'Homebrew skipped old-version cleanup for {skipped} packages without the latest version installed.'))
+        for line in lines:
+            print(line)
+        if not result.stdout.strip() and not result.stderr.strip():
+            print(text('当前没有可清理的项目。', 'Nothing to clean right now.'))
+        if result.returncode:
+            return result.returncode
+    return 0
+
+
 def clean(args):
     choices = cleanup_choices(args)
     if args.generate:
@@ -136,23 +251,9 @@ def clean(args):
         return 0
     brew = brew_path()
     if not args.list and not args.query and not args.yes and shutil.which('fzf'):
-        # Preview is a fixed, shell-quoted invocation; selected strings are validated below.
-        preview = shlex.join([sys.executable, str(Path(__file__).resolve()), 'clean', '--timeout', str(args.timeout), '--preview-action']) + ' {1}'
-        reload_argv = [sys.executable, str(Path(__file__).resolve()), 'clean', '--generate']
-        reload_argv += ['--' + scope for scope in selected_scopes(args)]
-        reload_command = shlex.join(reload_argv)
-        rows = '\n'.join(choices) + '\n'
-        env = brew_env()
-        env['SHELL'] = '/bin/sh'
-        result = run(['fzf', '--multi', '--header', text('Tab 多选 | Enter 预览并确认', 'Tab: multi-select | Enter: review and confirm'), '--preview', preview, '--bind', 'ctrl-r:reload(' + reload_command + ')', *(['--exact'] if args.exact else [])], input=rows, text=True, stdout=subprocess.PIPE, env=env, timeout=86400)
-        if result.returncode in (1, 130):
-            return 0
-        if result.returncode:
-            return result.returncode
-        chosen = result.stdout.splitlines()
-        if any(name not in choices for name in chosen):
-            raise ValueError('invalid cleanup selection')
-        choices = [name for name in choices if name in chosen]
+        choices, status = choose_cleanup(args, choices)
+        if status or not choices:
+            return status
     # Build plans from current inventory only after selection. No cached names
     # can authorize cleanup, and unused scopes never need a Homebrew query.
     matches = cleanup_actions(brew, args, choices)
@@ -202,7 +303,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.action == 'clean' and args.preview_action:
         args.query = [args.preview_action]
-        args.dry_run = args.yes = True
+        return preview_cleanup(args)
     return doctor(args) if args.action == 'doctor' else clean(args)
 
 

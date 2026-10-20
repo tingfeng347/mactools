@@ -84,7 +84,8 @@ class SystemTests(unittest.TestCase):
                 if argv[0] == 'fzf':
                     self.assertFalse(self.commands, 'inventory blocked menu startup')
                     menu_opened = True
-                    return subprocess.CompletedProcess(argv, 130 if cancelled else 0, 'cask-cache\n', '')
+                    row = next(row for row in kwargs['input'].splitlines() if row.startswith('cask-cache\t'))
+                    return subprocess.CompletedProcess(argv, 130 if cancelled else 0, '\n\n' + row + '\n', '')
                 self.assertTrue(menu_opened)
                 return self.fake_run(argv, **kwargs)
 
@@ -92,6 +93,64 @@ class SystemTests(unittest.TestCase):
                 self.assertEqual(system.main(['clean', '--dry-run']), 0)
             inventories = [argv for argv, _ in self.commands if argv[1] == 'list']
             self.assertEqual(inventories, [] if cancelled else [['/stub/brew', 'list', '--cask', '--full-name', '-1']])
+
+    def test_clean_selector_matches_package_layout_and_ignores_global_options(self):
+        menus = []
+
+        def run(argv, **kwargs):
+            if argv[0] == 'fzf':
+                menus.append(argv)
+                self.assertNotIn('FZF_DEFAULT_OPTS', kwargs['env'])
+                self.assertNotIn('FZF_DEFAULT_OPTS_FILE', kwargs['env'])
+                self.assertEqual(kwargs['env']['SHELL'], '/bin/sh')
+                for option in ('--layout=reverse', '--border', '--height=95%', '--info=hidden',
+                               '--preview-window=right:42%:wrap:<50(down:35%:wrap)'):
+                    self.assertIn(option, argv)
+                self.assertIn('ctrl-a:select-all', next(a for a in argv if a.startswith('--bind=')))
+                header = next(a for a in argv if a.startswith('--header='))
+                self.assertNotIn('Ctrl+A', header)
+                if len(menus) == 1:
+                    return subprocess.CompletedProcess(argv, 0, 'cache\nctrl-e\n', '')
+                self.assertIn('--exact', argv)
+                self.assertIn('--query=cache', argv)
+                if len(menus) == 2:
+                    return subprocess.CompletedProcess(argv, 0, 'cache\nctrl-r\n', '')
+                return subprocess.CompletedProcess(argv, 130, '', '')
+            raise AssertionError('cancelled menu queried inventory')
+
+        with patch.dict(os.environ, {'FZF_DEFAULT_OPTS': '--layout=default', 'FZF_DEFAULT_OPTS_FILE': '/stub/options'}), patch.object(system, 'brew_path', return_value='/stub/brew'), patch.object(system.shutil, 'which', return_value='/stub/fzf'), patch.object(system, 'run', side_effect=run):
+            self.assertEqual(system.main(['clean']), 0)
+        self.assertEqual(len(menus), 3)
+
+    def test_clean_selector_rejects_unknown_row(self):
+        with patch.object(system, 'brew_path', return_value='/stub/brew'), patch.object(system.shutil, 'which', return_value='/stub/fzf'), patch.object(system, 'run', return_value=subprocess.CompletedProcess('fzf', 0, '\n\nforged-action\n', '')):
+            with self.assertRaisesRegex(ValueError, 'invalid cleanup selection'):
+                system.main(['clean'])
+
+    def test_clean_preview_groups_skipped_warnings_but_preserves_other_output(self):
+        def run(argv, **kwargs):
+            if argv[1] == 'list':
+                return self.fake_run(argv, **kwargs)
+            self.assertIn('--dry-run', argv)
+            self.assertTrue(kwargs['capture_output'])
+            return subprocess.CompletedProcess(argv, 0, 'Would remove: /cache/hello (1MB)\n',
+                'Warning: Skipping hello: most recent version 2.0 not installed\n'
+                'Warning: Skipping other: most recent version 3.0 not installed\n'
+                'Warning: another diagnostic\n')
+
+        with patch.dict(os.environ, {'MACTOOLS_LANG': 'zh'}), patch.object(system, 'brew_path', return_value='/stub/brew'), patch.object(system, 'run', side_effect=run), contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(system.main(['clean', '--preview-action', 'formula-cache']), 0)
+        self.assertIn('2 项尚未安装最新版', output.getvalue())
+        self.assertNotIn('Warning: Skipping', output.getvalue())
+        self.assertIn('Would remove: /cache/hello (1MB)', output.getvalue())
+        self.assertIn('Warning: another diagnostic', output.getvalue())
+        self.assertNotIn('> /stub/brew', output.getvalue())
+
+    def test_failed_clean_detail_preserves_all_diagnostics(self):
+        with patch.object(system, 'brew_path', return_value='/stub/brew'), patch.object(system, 'run', return_value=subprocess.CompletedProcess('brew', 2, '', 'Warning: Skipping hello: most recent version 2.0 not installed\nError: unavailable\n')), contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(system.main(['clean', '--preview-action', 'autoremove']), 2)
+        self.assertIn('Error: unavailable', output.getvalue())
+        self.assertIn('Warning: Skipping', output.getvalue())
 
     def test_clean_preview_never_mutates(self):
         with patch.object(system, 'brew_path', return_value='/stub/brew'), patch.object(system, 'run', side_effect=self.fake_run), contextlib.redirect_stdout(io.StringIO()):
@@ -107,7 +166,11 @@ class SystemTests(unittest.TestCase):
             if argv[0] == 'fzf':
                 # Filter mode parses the real selector options without opening
                 # a terminal or executing the preview/reload commands.
-                return subprocess.run([*argv, '--filter=formula-cache'], **kwargs)
+                result = subprocess.run([*argv, '--filter=' + system.cleanup_info('formula-cache')[1]], **kwargs)
+                # --filter omits the expect-key line that interactive fzf emits.
+                query, _, rows = result.stdout.partition('\n')
+                result.stdout = query + '\n\n' + rows
+                return result
             return self.fake_run(argv, **kwargs)
         with patch.object(system, 'brew_path', return_value='/stub/brew'), patch.object(system, 'run', side_effect=run), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(system.main(['clean', '--dry-run']), 0)
