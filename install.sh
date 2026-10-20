@@ -32,7 +32,7 @@ install_mactools() {
     script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
     stage="$(mktemp -d "${TMPDIR:-/tmp}/mactools-install.XXXXXX")"
     trap "rm -rf -- $(printf '%q' "$stage")" EXIT
-    local files=(ma maci macr macu macd macc macm maca mactools.py mactools_runtime.py mactools_packages.py mactools_system.py mactools_cleanup.py mactools_mole.py mactools_mole.zip mactools_mirror.py mactools_ai.py)
+    local files=(ma maci macr macu macd macc maco macm maca mactools.py mactools_runtime.py mactools_packages.py mactools_apps.py mactools_system.py mactools_cleanup.py mactools_mole.py mactools_mole.zip mactools_mirror.py mactools_ai.py mactools_optimize.py)
     local local_ready=true
     for file in "${files[@]}"; do
         [[ -s "$script_dir/bin/$file" ]] || local_ready=false
@@ -84,7 +84,7 @@ for path in files:
         if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
             raise SystemExit('Invalid Mole source bundle checksum')
         with zipfile.ZipFile(path) as archive:
-            if archive.testzip() or not {'LICENSE', 'NOTICE.md', 'mactools-bridge.sh', 'bin/clean.sh'} <= set(archive.namelist()):
+            if archive.testzip() or not {'LICENSE', 'NOTICE.md', 'mactools-bridge.sh', 'mactools-apps.sh', 'mactools-optimize.sh', 'bin/clean.sh', 'bin/uninstall.sh'} <= set(archive.namelist()):
                 raise SystemExit('Incomplete Mole source bundle')
     else:
         if not path.read_bytes().startswith(b'#!/bin/bash\n'):

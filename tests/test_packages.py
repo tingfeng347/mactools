@@ -89,6 +89,129 @@ class PackageTests(unittest.TestCase):
         self.brew_patch = patch.object(packages, "brew_path", return_value=str(self.brew))
         self.brew_patch.start()
         self.addCleanup(self.brew_patch.stop)
+        native_patch = patch.object(packages, "native_rows", return_value=[])
+        native_patch.start()
+        self.addCleanup(native_patch.stop)
+
+    def test_native_apps_are_first_yellow_with_white_names(self):
+        app = packages.Row('app', 'app-' + 'a' * 64, '1.2', display_name='My Editor')
+        with patch.object(packages, 'native_rows', return_value=[app]):
+            code, output = self.invoke('remove', '--list')
+        self.assertEqual(code, 0)
+        self.assertTrue(output.startswith('app\tMy Editor\t1.2\tapp-'))
+        with patch.dict(os.environ, NO_COLOR='', TERM='xterm-256color'):
+            fields = app.selector_line('remove').split('\t')
+        self.assertIn('\033[38;5;220mapp', fields[4])
+        self.assertIn('\033[37mMy Editor', fields[5])
+        self.assertNotIn('My Editor', app.line())
+
+    def test_native_only_does_not_require_homebrew(self):
+        with patch.object(packages, 'brew_path', side_effect=ValueError('absent')):
+            self.assertEqual(self.invoke('remove', '--apps', '--list')[0], 0)
+            self.assertEqual(self.invoke('remove', '--list')[0], 0)
+            with self.assertRaises(ValueError):
+                self.invoke('remove', '--cask', '--list')
+        self.assertEqual(self.calls(), [])
+
+    def test_native_flag_validation(self):
+        for args in [('install', '--apps'), ('update', '--app-data'),
+                     ('remove', '--formula', '--app-data')]:
+            with self.assertRaises(ValueError):
+                self.invoke(*args)
+
+    def test_native_selection_searches_name_and_keeps_header(self):
+        self.invoke('remove', '--dry-run')
+        args = json.loads((self.root / 'fzf.log').read_text().splitlines()[0])
+        self.assertIn('--nth=2', args)
+        self.assertIn('--no-sort', args)
+        header = next(arg for arg in args if arg.startswith('--header='))
+        self.assertNotIn('Ctrl+A', header)
+
+    def test_native_preview_confirmation_and_duplicate_cask(self):
+        app = packages.Row('app', 'app-' + 'b' * 64, '1', display_name='Firefox')
+        for dry_run, accepted in ((True, True), (False, False), (False, True)):
+            with self.subTest(dry_run=dry_run, accepted=accepted):
+                with patch('mactools_apps.resolve_apps', return_value=['resolved']) as resolve, \
+                     patch('mactools_apps.AppUninstallPlan') as plan_factory, \
+                     patch.object(packages, 'confirm', return_value=accepted):
+                    native_plan = plan_factory.return_value
+                    native_plan.cask_identities = {(str(self.brew), 'firefox')}
+                    native_plan.apply.return_value = 0
+                    opts = packages.parser().parse_args(['remove', '--app-data'] + (['--dry-run'] if dry_run else []))
+                    queries = packages.Queries(str(self.brew), 15)
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        status = packages.execute_selection(str(self.brew), queries, opts,
+                            [app, packages.Row('cask', 'homebrew/cask/firefox', '120')])
+                    self.assertEqual(status, 0)
+                    resolve.assert_called_once_with([app.name], 15)
+                    plan_factory.assert_called_once_with(['resolved'], 15, with_data=True)
+                    native_plan.preview.assert_called_once_with()
+                    native_plan.close.assert_called_once_with()
+                    self.assertEqual(native_plan.apply.called, not dry_run and accepted)
+        self.assertEqual(self.mutations(), [])
+
+    def test_cask_dedup_requires_same_homebrew_and_tap(self):
+        self.assertEqual(packages.cask_identity(str(self.brew), 'firefox'),
+                         packages.cask_identity(str(self.brew), 'homebrew/cask/firefox'))
+        self.assertNotEqual(packages.cask_identity(str(self.brew), 'firefox'),
+                            packages.cask_identity(str(self.brew), 'owner/tap/firefox'))
+        self.assertNotEqual(packages.cask_identity(str(self.brew), 'firefox'),
+                            packages.cask_identity(str(self.root / 'other-brew'), 'firefox'))
+
+    def test_native_failure_stops_remaining_brew_operations(self):
+        opts = packages.parser().parse_args(['remove', '--yes'])
+        queries = packages.Queries(str(self.brew), 15)
+        app = packages.Row('app', 'app-' + 'c' * 64, '1', display_name='Editor')
+        with patch('mactools_apps.resolve_apps', return_value=['resolved']), \
+             patch('mactools_apps.AppUninstallPlan') as factory:
+            factory.return_value.cask_identities = set()
+            factory.return_value.apply.return_value = 4
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = packages.execute_selection(str(self.brew), queries, opts,
+                    [app, packages.Row('formula', 'git', '2')])
+            self.assertEqual(code, 4)
+            factory.return_value.close.assert_called_once_with()
+        self.assertEqual(self.mutations(), [])
+
+    def test_native_snapshot_roundtrip_and_stale_selection(self):
+        app = packages.Row('app', 'app-' + 'd' * 64, '1', display_name='Old Editor')
+        opts = packages.parser().parse_args(['remove'])
+        opts.include_apps, opts.sources = True, ['formula', 'cask']
+        queries = packages.Queries(str(self.brew), 15)
+        packages.save_selector(queries, opts, [app])
+        self.assertEqual(packages.cached_selector(queries, opts), [app])
+        opts.include_apps = False
+        self.assertEqual(packages.cached_selector(queries, opts), [])
+        # A cached application disappearing during refresh must never reach apply.
+        self.cached_fzf()
+        with patch.dict(os.environ, CACHED_SELECT=app.name, INVENTORY_DELAY='0.1'):
+            self.assertEqual(self.invoke('remove', '--yes')[0], 0)
+        self.assertEqual(self.mutations(), [])
+
+    def test_malformed_native_cache_is_ignored(self):
+        opts = packages.parser().parse_args(['remove'])
+        opts.include_apps, opts.sources = True, ['formula', 'cask']
+        queries = packages.Queries(str(self.brew), 15)
+        for entry in (None, {'row': 'bad', 'display_name': 'Editor'},
+                      {'row': 'cask\teditor\t1\t-', 'display_name': 'Editor'}):
+            snapshot = self.write_snapshot('remove', [])
+            payload = json.loads(snapshot.read_text())
+            payload['apps'] = [entry]
+            snapshot.write_text(json.dumps(payload))
+            self.assertIsNone(packages.cached_selector(queries, opts))
+
+    @unittest.skipUnless(REAL_FZF, 'host fzf unavailable')
+    def test_real_fzf_searches_native_display_name_and_preserves_app_group(self):
+        app = packages.Row('app', 'app-' + 'e' * 64, '1', display_name='Firefox')
+        cask = packages.Row('cask', 'firefox', '120')
+        data = '\n'.join(row.selector_line('remove') for row in (app, cask)) + '\n'
+        env = dict(os.environ)
+        env.pop('FZF_DEFAULT_OPTS', None)
+        env.pop('FZF_DEFAULT_OPTS_FILE', None)
+        result = subprocess.run([REAL_FZF, '--ansi', '--delimiter=\t', '--nth=2',
+                                 '--with-nth=5..', '--no-sort', '--filter=firefox'],
+                                input=data, capture_output=True, text=True, env=env, check=True)
+        self.assertEqual([packages.Row.parse(line).source for line in result.stdout.splitlines()], ['app', 'cask'])
 
     def calls(self):
         path = self.root / "brew.log"

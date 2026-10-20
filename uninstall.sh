@@ -14,7 +14,7 @@ uninstall_mactools() {
         shift
     done
     [[ "$bin_dir" == /* && "$bin_dir" != / ]] || { echo 'Install directory must be absolute and cannot be /' >&2; return 2; }
-    local files=(ma maci macr macu macd macc macm maca mactools.py mactools_runtime.py mactools_packages.py mactools_system.py mactools_cleanup.py mactools_mole.py mactools_mole.zip mactools_mirror.py mactools_ai.py)
+    local files=(ma maci macr macu macd macc maco macm maca mactools.py mactools_runtime.py mactools_packages.py mactools_apps.py mactools_system.py mactools_cleanup.py mactools_mole.py mactools_mole.zip mactools_mirror.py mactools_ai.py mactools_optimize.py)
     for file in "${files[@]}"; do
         if [[ -e "$bin_dir/$file" || -L "$bin_dir/$file" ]]; then
             if [[ "$dry_run" == true ]]; then

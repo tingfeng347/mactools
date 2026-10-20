@@ -10,7 +10,7 @@ from pathlib import Path, PurePosixPath
 
 from mactools_runtime import text
 
-BUNDLE_SHA256 = '2412d78b0a89cfc78b7dc6f7ba6605ee410952fbf7eb5f0e801628d25b415c91'
+BUNDLE_SHA256 = '23d2d5f0bacdf960a4a2f77950c4528290681ac67e339613ca9ff9d227eddf9c'
 
 
 def mole_info():
@@ -36,10 +36,32 @@ def mole_info():
         ('project-cache', 'build', '项目构建缓存', 'Project build caches', '可再生缓存，保护 Git 文件', 'Rebuildable caches, Git guarded'),
         ('project-artifacts', 'build', '闲置项目依赖与产物', 'Inactive project artifacts', '闲置至少 7 天', 'Inactive at least 7 days'),
         ('installers', 'file', '下载的安装包', 'Downloaded installers', 'DMG / PKG / 安装压缩包', 'DMG / PKG / installer archives'),
+        ('trash', 'trash', '清空废纸篓', 'Empty Trash', '仅清理已预览项目', 'Only reviewed Trash items'),
+        ('recent-items', 'review', '检查最近使用记录', 'Review recent items history', '保留受保护的 macOS 记录与原文件', 'Preserve protected macOS history / originals'),
+        ('mail-downloads', 'mail', '旧邮件下载附件', 'Old Mail downloads', 'Mail 退出后清理旧下载副本', 'Old download copies while Mail is closed'),
+        ('incomplete-downloads', 'file', '闲置的未完成下载', 'Idle incomplete downloads', '保留正在使用的下载', 'Preserve active downloads'),
+        ('saved-state', 'state', '应用保存状态', 'Saved application state', '关闭应用后的窗口恢复状态', 'Window restoration state for closed apps'),
+        ('old-app-versions', 'app', '应用旧版本', 'Old application versions', '签名校验后保留当前版本', 'Signature guards preserve active versions'),
+        ('orphan-app-data', 'app', '卸载后的应用残留', 'Orphaned application data', '保留已安装应用及用户资料', 'Protect installed apps and user documents'),
+        ('orphan-services', 'system', '失效的系统服务注册', 'Orphaned system registrations', '需要时请求管理员权限', 'Administrator access when required'),
+        ('system-cache', 'system', '系统旧缓存与日志', 'Old system caches and logs', '按保留期限清理；需要管理员权限', 'Age guarded; requires administrator access'),
+        ('finder-metadata', 'review', '检查 Finder 元数据', 'Review Finder metadata', 'Mole 安全规则保留 .DS_Store', 'Mole safety rules preserve .DS_Store'),
+        ('group-cache', 'cache', '共享容器缓存', 'Group container caches', '保留容器中的应用资料', 'Preserve application data in containers'),
+        ('silicon-cache', 'cache', 'Apple Silicon 缓存', 'Apple Silicon caches', 'Rosetta 与 Metal 可再生缓存', 'Rebuildable Rosetta / Metal caches'),
+        ('device-firmware', 'file', '设备固件下载缓存', 'Downloaded device firmware', '旧 iPhone / iPad 固件', 'Old iPhone / iPad firmware'),
+        ('failed-backups', 'backup', '失败的 Time Machine 备份', 'Failed Time Machine backups', '仅过期且非活动的未完成备份', 'Only stale inactive incomplete backups'),
+        ('mobile-cache', 'xcode', '移动开发与模拟器', 'Mobile development and simulators', '无效模拟器、旧设备支持与缓存', 'Unavailable simulators / old device support'),
+        ('toolbox-cache', 'editor', 'JetBrains Toolbox 旧版本', 'Old JetBrains Toolbox versions', '保留当前使用版本', 'Preserve active versions'),
+        ('nix-garbage', 'nix', 'Nix 无引用存储', 'Unreferenced Nix store paths', '仅删除预览时无引用的路径', 'Delete only reviewed dead store paths'),
+        ('local-snapshots', 'review', '检查本地快照', 'Review local snapshots', '仅检查，交由 Time Machine 管理', 'Review only; managed by Time Machine'),
+        ('system-updates', 'review', '检查系统更新暂存', 'Review OS update staging', '仅检查，交由系统更新管理', 'Review only; managed by Software Update'),
+        ('large-files', 'review', '检查大文件', 'Review large files', '仅列出建议，不自动删除', 'Suggestions only, no automatic deletion'),
+        ('periodic-maintenance', 'system', '系统定期维护', 'Periodic system maintenance', '系统支持时运行日常维护', 'Run periodic tasks when supported'),
+        ('disk-verify', 'review', '检查磁盘文件系统', 'Verify disk filesystem', '需显式启用 MOLE_ENABLE_DISK_VERIFY=1', 'Opt in with MOLE_ENABLE_DISK_VERIFY=1'),
     ]
     description = text(
-        '复用 Mole 清理源码及白名单、运行状态和路径保护。预览列出当前候选；执行时重新检查，只处理已预览且身份未变化的目标。不会请求管理员权限。',
-        'Uses Mole cleanup source with whitelist, activity and path guards. Preview lists current candidates; apply rechecks them and only processes reviewed, unchanged targets. No administrator access is requested.')
+        '复用 Mole 清理源码及白名单、运行状态和路径保护。执行时重新检查已预览目标；系统项目在确认后按需请求管理员权限。标记为检查的项目遵循 Mole 的保留策略。',
+        'Uses Mole source with whitelist, activity and path guards. Apply rechecks reviewed targets; system actions request administrator access after confirmation when required. Review actions follow Mole preservation policies.')
     return {name: (kind, text(zh, en), text(scope_zh, scope_en), description)
             for name, kind, zh, en, scope_zh, scope_en in entries}
 
@@ -47,7 +69,8 @@ def mole_info():
 MOLE_DEV_ACTIONS = frozenset(('rust-cache', 'jvm-cache', 'frontend-cache', 'ruby-cache',
                               'cloud-cli-cache', 'ai-cache', 'editor-cache',
                               'xcode-extra', 'project-cache', 'project-artifacts',
-                              'language-cache', 'build-tools-cache'))
+                              'language-cache', 'build-tools-cache', 'mobile-cache',
+                              'toolbox-cache', 'nix-garbage'))
 
 
 def unpack_bundle(destination):
@@ -62,10 +85,19 @@ def unpack_bundle(destination):
         archive.extractall(destination)
 
 
-def run_engine(argv, env, timeout):
+def run_engine(argv, env, timeout, interactive=False):
     # A timed-out shell may have scanners and owner commands running. Terminate
     # its whole session and reap it before returning control to ma.
-    process = subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL, start_new_session=True)
+    if interactive and threading.current_thread() is not threading.main_thread():
+        raise ValueError('Interactive Mole actions must run on the main thread.')
+    # Confirmed actions retain their controlling terminal (including nested
+    # Homebrew/sudo prompts), but own a process group for bounded cancellation.
+    # os.setpgrp is the Python 3.9-compatible equivalent of process_group=0.
+    process = subprocess.Popen(argv, env=env,
+                               stdin=None if interactive else subprocess.DEVNULL,
+                               start_new_session=not interactive,
+                               preexec_fn=os.setpgrp if interactive else None)
+    terminal_fd = foreground_group = previous_ttou = None
     previous_term = None
     if threading.current_thread() is threading.main_thread():
         previous_term = signal.getsignal(signal.SIGTERM)
@@ -77,6 +109,34 @@ def run_engine(argv, env, timeout):
         # SIGTERM to normal unwinding so the scanner's separate group stops.
         signal.signal(signal.SIGTERM, terminate)
     try:
+        if interactive:
+            try:
+                terminal_fd = os.open('/dev/tty', os.O_RDWR)
+            except OSError:
+                # Noninteractive callers may still run actions whose owners
+                # need no credentials. They receive no terminal handoff.
+                if os.isatty(0):
+                    raise
+        if terminal_fd is not None:
+            foreground_group = os.tcgetpgrp(terminal_fd)
+            if foreground_group != os.getpgrp():
+                raise ValueError('Run interactive Mole actions in the foreground.')
+            previous_ttou = signal.getsignal(signal.SIGTTOU)
+            signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+            try:
+                os.tcsetpgrp(terminal_fd, process.pid)
+            except OSError:
+                # A no-op owner command can exit before its group receives
+                # the foreground. Its exit status remains authoritative.
+                if process.poll() is not None:
+                    return process.returncode
+                raise
+            # A fast child can read before the foreground transfer and receive
+            # SIGTTIN. Resume it only after its group owns the terminal.
+            try:
+                os.killpg(process.pid, signal.SIGCONT)
+            except ProcessLookupError:
+                pass
         return process.wait(timeout=timeout)
     except BaseException:
         try:
@@ -94,8 +154,18 @@ def run_engine(argv, env, timeout):
         process.wait()
         raise
     finally:
-        if previous_term is not None:
-            signal.signal(signal.SIGTERM, previous_term)
+        try:
+            if terminal_fd is not None:
+                try:
+                    if foreground_group is not None and os.tcgetpgrp(terminal_fd) == process.pid:
+                        os.tcsetpgrp(terminal_fd, foreground_group)
+                finally:
+                    os.close(terminal_fd)
+        finally:
+            if previous_ttou is not None:
+                signal.signal(signal.SIGTTOU, previous_ttou)
+            if previous_term is not None:
+                signal.signal(signal.SIGTERM, previous_term)
 
 
 class MolePlan:
@@ -126,8 +196,14 @@ class MolePlan:
         for key in list(env):
             if key in ('BASH_ENV', 'ENV', 'SHELLOPTS', 'BASHOPTS', 'MOLE_TEST_MODE') or key.startswith('BASH_FUNC_'):
                 env.pop(key, None)
-        status = run_engine(self.argv + [mode, str(self.ledger)], env,
-                            self.timeout if mode == 'preview' else 600)
+        arguments = (self.argv + [mode, str(self.ledger)], env,
+                     self.timeout if mode == 'preview' else 600)
+        if mode == 'apply' and self.name in ('system-cache', 'orphan-services',
+                                            'mobile-cache', 'old-app-versions',
+                                            'periodic-maintenance'):
+            status = run_engine(*arguments, interactive=True)
+        else:
+            status = run_engine(*arguments)
         if status:
             raise ValueError(text(f'{self.name} 清理未完成（状态 {status}）。',
                                   f'{self.name} cleanup incomplete (status {status}).'))
@@ -143,4 +219,7 @@ class MolePlan:
     def apply(self, timeout):
         if not self.reviewed:
             raise ValueError('Preview the Mole cleanup plan before applying it.')
-        return self._run('apply')
+        try:
+            return self._run('apply')
+        finally:
+            self.reviewed = False

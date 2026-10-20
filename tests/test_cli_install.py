@@ -75,7 +75,8 @@ class CLI(unittest.TestCase):
 
     def test_all_shortcuts_match_dispatcher_help(self):
         for alias, action in {'maci':'install', 'macr':'remove', 'macu':'update',
-                              'macd':'doctor', 'macc':'clean', 'macm':'mirror', 'maca':'ai'}.items():
+                              'macd':'doctor', 'macc':'clean', 'maco':'optimize',
+                              'macm':'mirror', 'maca':'ai'}.items():
             with self.subTest(alias=alias):
                 full = self.invoke(action, '--help')
                 short = self.invoke('--help', executable=ROOT / 'bin' / alias)
@@ -99,6 +100,8 @@ class CLI(unittest.TestCase):
             result = self.invoke('completion', shell)
             self.assertEqual(result.returncode, 0)
             self.assertIn('maci', result.stdout)
+            self.assertIn('maco', result.stdout)
+            self.assertIn('network-optimization', result.stdout)
             self.assertIn('refresh-index', result.stdout)
             self.assertIn('config-dir', result.stdout)
             self.assertIn('latest', result.stdout)
@@ -127,10 +130,16 @@ class Install(unittest.TestCase):
         result = self.script('install.sh', '--bin-dir', str(target))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(os.access(target / 'maci', os.X_OK))
+        self.assertTrue(os.access(target / 'maco', os.X_OK))
         self.assertEqual(self.invoke('--version', executable=target / 'ma').returncode, 0)
         clean = self.invoke('clean', '--dev', '--generate', executable=target / 'ma')
         self.assertEqual(clean.returncode, 0, clean.stderr)
         self.assertIn('xcode-derived', clean.stdout)
+        optimize = self.invoke('optimize', '--list', executable=target / 'ma')
+        self.assertEqual(optimize.returncode, 0, optimize.stderr)
+        self.assertIn('network-optimization', optimize.stdout)
+        self.assertTrue((target / 'mactools_apps.py').is_file())
+        self.assertTrue((target / 'mactools_optimize.py').is_file())
         (target / 'unrelated').write_text('preserve')
         marker = self.root / 'config/mactools/language'
         marker.parent.mkdir(parents=True)
@@ -144,6 +153,8 @@ class Install(unittest.TestCase):
         self.assertFalse((target / 'ma').exists())
         self.assertFalse((target / 'mactools_cleanup.py').exists())
         self.assertFalse((target / 'mactools_mole.zip').exists())
+        self.assertFalse((target / 'mactools_optimize.py').exists())
+        self.assertFalse((target / 'maco').exists())
         self.assertEqual((target / 'unrelated').read_text(), 'preserve')
         self.assertEqual(marker.read_text(), 'en\n')
 
@@ -227,6 +238,7 @@ os.replace = replace
         result = self.script('install.sh', '--bin-dir', str(target))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((target / 'mactools_mole.zip').is_file())
+        self.assertTrue((target / 'mactools_apps.py').is_file())
         self.env.update(HOME=str(self.root), MOLE_TEST_NO_AUTH='1')
         result = self.invoke('clean', '--exact', 'frontend-cache', '--dry-run', executable=target / 'ma')
         self.assertEqual(result.returncode, 0, result.stderr)

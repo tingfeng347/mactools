@@ -85,6 +85,7 @@ class Row:
     name: str
     current: str = "-"
     target: str = "-"
+    display_name: str = ""
 
     def line(self):
         return "\t".join((self.source, self.name, clean(self.current), clean(self.target)))
@@ -96,12 +97,12 @@ class Row:
         name_width, version_width = widths or selector_widths(action)
         official = '/' not in self.name or self.name.startswith('homebrew/')
         kind = cell(source, 8)
-        name = cell(self.name, name_width)
+        name = cell(clean(self.display_name or self.name), name_width)
         colored = not os.environ.get('NO_COLOR') and os.environ.get('TERM') != 'dumb'
         installed = self.current != '-'
         check = '✓' if installed else ' '
         if colored:
-            color = '38;5;75' if official else '38;5;141'
+            color = '38;5;220' if source == 'app' else ('38;5;75' if official else '38;5;141')
             kind = f'\033[{color}m{kind}\033[0m'
             name = f'\033[37m{name}\033[0m'
             if installed:
@@ -114,8 +115,12 @@ class Row:
     @classmethod
     def parse(cls, line):
         parts = line.split("\t")
-        if len(parts) < 4 or parts[0] not in ("formula", "cask"):
+        if len(parts) < 4 or parts[0] not in ("formula", "cask", "app"):
             raise ValueError("Invalid package selection")
+        if parts[0] == 'app':
+            if not re.fullmatch(r'app-[a-f0-9]{64}', parts[1]):
+                raise ValueError('Invalid application selection')
+            return cls(*parts[:4])
         return cls(parts[0], package_name(parts[1]), parts[2], parts[3])
 
 
@@ -322,7 +327,19 @@ def catalog(queries, source, refresh=False, writable=True):
     return names
 
 
+def native_rows(opts):
+    if not getattr(opts, 'include_apps', False):
+        return []
+    from mactools_apps import installed_apps
+    return [Row('app', app.id, app.version or text('未知', 'Unknown'), display_name=app.name)
+            for app in installed_apps(opts.timeout)]
+
+
 def rows(queries, opts):
+    # Native applications appear before any slower Homebrew inventory query.
+    yield from native_rows(opts)
+    if not opts.sources:
+        return
     installed = json_inventory(queries, opts.action, opts.sources)
     if opts.action != "install":
         yield from sorted(installed, key=lambda row: (row.source, row.name))
@@ -354,7 +371,7 @@ def matches(name, query, exact=False):
 
 
 def selector_cache_path(action, sources=None):
-    suffix = '' if sources is None or sources == ['formula', 'cask'] else '-' + '-'.join(sources)
+    suffix = '' if sources is None or sources == ['formula', 'cask'] else '-' + ('-'.join(sources) or 'apps')
     return cache_dir() / ('selector-' + action + suffix + '.json')
 
 
@@ -365,12 +382,21 @@ def cached_selector(queries, opts):
             payload = json.loads(path.read_text())
             stamp, sources = payload['time'], payload['sources']
             if (payload.get('brew') != queries.brew
-                    or sources not in (['formula'], ['cask'], ['formula', 'cask'])
+                    or sources not in ([], ['formula'], ['cask'], ['formula', 'cask'])
                     or not set(opts.sources).issubset(sources)
                     or not isinstance(stamp, (int, float)) or not math.isfinite(stamp)
                     or not 0 <= time.time() - stamp < SELECTOR_CACHE_SECONDS):
                 continue
             result = []
+            if getattr(opts, 'include_apps', False):
+                for entry in payload.get('apps', []):
+                    if not isinstance(entry, dict) or not isinstance(entry.get('display_name'), str):
+                        raise ValueError('Invalid cached application')
+                    row = Row.parse(entry['row'])
+                    if row.source != 'app' or row.line() != entry['row']:
+                        raise ValueError('Invalid cached application')
+                    result.append(Row(row.source, row.name, row.current, row.target,
+                                      clean(entry['display_name'])))
             for line in payload['rows']:
                 row = Row.parse(line)
                 if row.source not in sources or row.line() != line:
@@ -391,7 +417,9 @@ def save_selector(queries, opts, result):
     try:
         save_json(selector_cache_path(opts.action, opts.sources), {
             'brew': queries.brew, 'sources': opts.sources, 'time': time.time(),
-            'rows': [row.line() for row in result],
+            'rows': [row.line() for row in result if row.source != 'app'],
+            'apps': [{'row': row.line(), 'display_name': row.display_name}
+                     for row in result if row.source == 'app'],
         })
     except OSError:
         # A cache is optional; read-only Homebrew operations still work without it.
@@ -446,6 +474,9 @@ def select(queries, opts):
                 '--header=' + header]
         if exact:
             argv.append('--exact')
+        if getattr(opts, 'include_apps', False):
+            # Preserve the app group before casks/formulae, including searches.
+            argv.append('--no-sort')
         env = dict(os.environ)
         env.pop('FZF_DEFAULT_OPTS', None)
         env.pop('FZF_DEFAULT_OPTS_FILE', None)
@@ -548,8 +579,9 @@ def select(queries, opts):
             row = Row.parse(line)
             if without_color(line) not in allowed:
                 raise ValueError('Unknown package selection')
-            if row not in selected:
-                selected.append(row)
+            actual = emitted.get((row.source, row.name), row)
+            if actual not in selected:
+                selected.append(actual)
         if cached is not None and selected:
             if not completed.is_set():
                 # Enter may beat the refresh. Cache never authorizes a mutation.
@@ -578,10 +610,12 @@ def plan(brew, action, selected):
 
 
 def parser():
-    result = argparse.ArgumentParser(prog="ma", description=text("Homebrew 多选安装、卸载、更新", "Select Homebrew packages to install, remove or update"))
+    result = argparse.ArgumentParser(prog="ma", description=text("软件多选安装、卸载、更新", "Select packages and applications to install, remove or update"))
     result.add_argument("action", choices=("install", "remove", "update"))
     result.add_argument("--formula", "--brew", action="store_true", help=text("选择 formula，可与 --cask 组合", "Select formulae; combine with --cask"))
     result.add_argument("--cask", action="store_true", help=text("选择 cask", "Select casks"))
+    result.add_argument("--apps", action="store_true", help=text("仅 remove：只列本机应用及其残留，可与 --cask 组合", "remove only: native applications; combine with --cask if needed"))
+    result.add_argument("--app-data", action="store_true", help=text("仅 remove：同时移除应用个人数据，预览后确认", "remove only: include personal app data after preview and confirmation"))
     result.add_argument("--exact", "-e", action="store_true", help=text("按名称精确匹配（子串）", "Exact name matching (substring)"))
     result.add_argument("--refresh", "-r", action="store_true", help=text("重新查询目录；不会运行 brew update", "Reload names; does not run brew update"))
     result.add_argument("--refresh-index", action="store_true", help=text("仅 update：明确执行 brew update", "update only: explicitly run brew update"))
@@ -599,8 +633,22 @@ def main(argv):
         raise ValueError("--timeout must be a positive finite number")
     if opts.refresh_index and (opts.action != "update" or opts.list or opts.dry_run):
         raise ValueError(text("--refresh-index 仅用于 update，不能与 --list 或 --dry-run 组合", "--refresh-index requires update and cannot be combined with --list or --dry-run"))
-    opts.sources = [source for source, enabled in (("formula", opts.formula), ("cask", opts.cask)) if enabled] or ["formula", "cask"]
-    brew = brew_path()
+    if (opts.apps or opts.app_data) and opts.action != 'remove':
+        raise ValueError(text('--apps 和 --app-data 仅用于 remove', '--apps and --app-data require remove'))
+    explicit_sources = [source for source, enabled in (("formula", opts.formula), ("cask", opts.cask)) if enabled]
+    opts.include_apps = opts.action == 'remove' and (opts.apps or not explicit_sources)
+    if opts.app_data and not opts.include_apps:
+        raise ValueError(text('--app-data 需要选择应用卸载', '--app-data requires application removal'))
+    opts.sources = explicit_sources or ([] if opts.apps else ['formula', 'cask'])
+    brew = ''
+    if opts.sources:
+        try:
+            brew = brew_path()
+        except ValueError:
+            if not opts.include_apps or explicit_sources:
+                raise
+            opts.sources = []
+            print(text('未找到 Homebrew，仅列出本机应用。', 'Homebrew unavailable; showing native applications only.'), file=sys.stderr)
     queries = Queries(brew, opts.timeout)
     try:
         if opts.refresh_index:
@@ -613,25 +661,12 @@ def main(argv):
         if opts.list:
             query = " ".join(opts.query)
             for row in rows(queries, opts):
-                if matches(row.name, query, opts.exact):
-                    print(row.line())
+                if matches(row.display_name or row.name, query, opts.exact):
+                    print('\t'.join((row.source, row.display_name, row.current, row.name))
+                          if row.source == 'app' else row.line())
             return 0
         selected = select(queries, opts)
-        commands = plan(brew, opts.action, selected)
-        if not commands:
-            return 0
-        print(text("执行计划：", "Plan:"))
-        for row in selected:
-            print(row.line())
-        for argv in commands:
-            command(argv)
-        if opts.dry_run or not confirm(text("执行上述计划？", "Execute this plan?"), opts.yes):
-            return 0
-        for argv in commands:
-            code = subprocess.run(argv, env=queries.env).returncode
-            if code:
-                return code
-        return 0
+        return execute_selection(brew, queries, opts, selected)
     except BrewError as error:
         print(str(error), file=sys.stderr)
         return error.code
@@ -639,8 +674,58 @@ def main(argv):
         queries.close()
 
 
+def cask_identity(brew, token):
+    # Official qualified/unqualified tokens denote the same cask. A third-party
+    # tap or a different Homebrew executable must never be merged by basename.
+    prefix = 'homebrew/cask/'
+    return (os.path.realpath(brew), token[len(prefix):] if token.startswith(prefix) else token)
+
+
+def execute_selection(brew, queries, opts, selected):
+    native = [row for row in selected if row.source == 'app']
+    app_plan = None
+    try:
+        if native:
+            from mactools_apps import AppUninstallPlan, resolve_apps
+            apps = resolve_apps([row.name for row in native], opts.timeout)
+            app_plan = AppUninstallPlan(apps, opts.timeout, with_data=opts.app_data)
+            app_plan.preview()
+        # Mole's app uninstaller removes the cask registration itself. If both
+        # views of one app were selected, run that uninstall just once.
+        handled = {cask_identity(owner, token) for owner, token in app_plan.cask_identities} if app_plan else set()
+        remaining = [row for row in selected if row.source != 'app' and not
+                     (row.source == 'cask' and cask_identity(brew, row.name) in handled)]
+        commands = plan(brew, opts.action, remaining)
+        if not commands and app_plan is None:
+            return 0
+        print(text('执行计划：', 'Plan:'))
+        for row in selected:
+            print('\t'.join((row.source, row.display_name or row.name, row.current, row.target)))
+        for argv in commands:
+            command(argv)
+        prompt = text('卸载所选应用及预览中的残留，并执行以上计划？',
+                      'Uninstall selected apps and reviewed leftovers, and execute this plan?') if app_plan else text('执行上述计划？', 'Execute this plan?')
+        if opts.dry_run or not confirm(prompt, opts.yes):
+            return 0
+        if app_plan:
+            code = app_plan.apply(max(600, opts.timeout))
+            if code:
+                return code
+        for argv in commands:
+            code = subprocess.run(argv, env=queries.env).returncode
+            if code:
+                return code
+        return 0
+    finally:
+        if app_plan:
+            app_plan.close()
+
+
 def preview(argv):
     brew, timeout, source, name = argv
+    if source == 'app':
+        from mactools_apps import preview_detail
+        return preview_detail(name, float(timeout))
     if source not in ("formula", "cask"):
         raise ValueError("Invalid source")
     queries = Queries(brew, float(timeout), detached='FZF_PREVIEW_COLUMNS' not in os.environ)
