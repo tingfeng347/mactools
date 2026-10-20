@@ -209,7 +209,7 @@ class PackageTests(unittest.TestCase):
         env.pop('FZF_DEFAULT_OPTS', None)
         env.pop('FZF_DEFAULT_OPTS_FILE', None)
         result = subprocess.run([REAL_FZF, '--ansi', '--delimiter=\t', '--nth=2',
-                                 '--with-nth=5..', '--no-sort', '--filter=firefox'],
+                                 '--with-nth=5..', '--no-sort', '--sync', '--filter=firefox'],
                                 input=data, capture_output=True, text=True, env=env, check=True)
         self.assertEqual([packages.Row.parse(line).source for line in result.stdout.splitlines()], ['app', 'cask'])
 
