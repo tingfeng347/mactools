@@ -73,6 +73,12 @@ bash uninstall.sh --purge-cache
 bash uninstall.sh --bin-dir "$HOME/bin"
 ```
 
+如果 `brew uninstall mactools` 提示未安装但 `ma` 仍可运行，说明当前是脚本安装。用 `command -v ma` 确认路径（通常为 `~/.local/bin/ma`），然后运行仓库中的 `bash uninstall.sh`。未保留源码目录时可直接执行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tingfeng347/mactools/main/uninstall.sh | bash
+```
+
 卸载只删除 mactools 自己的入口和模块；保留应用、依赖、AI 登录与会话、语言设置、镜像片段和镜像备份。`--purge-cache` 仅额外删除当前用户的 mactools 缓存。
 
 安装脚本的独立下载模式按 GitHub Raw、jsDelivr 顺序尝试，完整下载并检查后再部署。下载地址可以用 `MACTOOLS_DOWNLOAD_BASES` 指定（空格分隔）。

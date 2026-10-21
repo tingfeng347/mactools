@@ -73,6 +73,12 @@ bash uninstall.sh --purge-cache
 bash uninstall.sh --bin-dir "$HOME/bin"
 ```
 
+If `brew uninstall mactools` reports that it is not installed but `ma` still runs, the current copy was installed by the script. Check `command -v ma` (usually `~/.local/bin/ma`), then run `bash uninstall.sh` from the repository. Without a checkout, run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tingfeng347/mactools/main/uninstall.sh | bash
+```
+
 The uninstaller removes only mactools commands and modules. It preserves applications, dependencies, AI logins and sessions, language settings, mirror snippets, and mirror backups. `--purge-cache` additionally removes the current user's mactools cache.
 
 The standalone installer tries GitHub Raw and then jsDelivr, downloading and validating the full payload before deployment. Override download bases with `MACTOOLS_DOWNLOAD_BASES` (space separated).
