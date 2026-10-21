@@ -33,10 +33,13 @@ ma ai install --all --dry-run
 
 ![maci 搜索 fish，显示已安装版本和软件详情](docs/images/install-status.png)
 
-## 安装
+## 安装与卸载
+
+Homebrew：
 
 ```bash
 brew install tingfeng347/tap/mactools
+brew uninstall mactools
 ```
 
 脚本安装（部署到 `~/.local/bin`，不需要 sudo）：
@@ -44,11 +47,6 @@ brew install tingfeng347/tap/mactools
 ```bash
 git clone https://github.com/tingfeng347/mactools.git
 cd mactools && bash install.sh
-```
-
-卸载：
-
-```bash
 bash uninstall.sh
 ```
 

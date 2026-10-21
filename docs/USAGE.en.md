@@ -25,6 +25,14 @@ brew upgrade mactools
 brew uninstall mactools
 ```
 
+`brew uninstall mactools` removes the commands, shared modules, and shell completions. Caches are kept by default; remove them manually if desired:
+
+```bash
+rm -rf "${XDG_CACHE_HOME:-$HOME/Library/Caches}/mactools"
+```
+
+If you no longer use the tap, run `brew untap tingfeng347/tap`.
+
 Tap: [tingfeng347/homebrew-tap](https://github.com/tingfeng347/homebrew-tap).
 
 You can also clone the project and use the installer:

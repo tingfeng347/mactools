@@ -33,10 +33,13 @@ ma ai install --all --dry-run
 
 ![maci searching for fish with installed versions and package details](docs/images/install-status.png)
 
-## Install
+## Install and uninstall
+
+Homebrew:
 
 ```bash
 brew install tingfeng347/tap/mactools
+brew uninstall mactools
 ```
 
 From a checkout (installs to `~/.local/bin`, no sudo):
@@ -44,11 +47,6 @@ From a checkout (installs to `~/.local/bin`, no sudo):
 ```bash
 git clone https://github.com/tingfeng347/mactools.git
 cd mactools && bash install.sh
-```
-
-Uninstall:
-
-```bash
 bash uninstall.sh
 ```
 

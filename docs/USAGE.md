@@ -25,6 +25,14 @@ brew upgrade mactools
 brew uninstall mactools
 ```
 
+`brew uninstall mactools` 会移除命令、共享模块和补全。缓存默认保留，如需清理可手动执行：
+
+```bash
+rm -rf "${XDG_CACHE_HOME:-$HOME/Library/Caches}/mactools"
+```
+
+如果不再使用该软件源，可执行 `brew untap tingfeng347/tap`。
+
 软件源：[tingfeng347/homebrew-tap](https://github.com/tingfeng347/homebrew-tap)。
 
 也可以克隆项目，使用脚本安装：
