@@ -36,7 +36,10 @@ if os.environ.get("SLOW_CHILD_COMMAND") == args[0]:
     time.sleep(10)
 if os.environ.get("SLOW_COMMAND") == args[0]:
     time.sleep(10)
-if args[0] == "formulae":
+if args[:2] == ["list", "--versions"]:
+    for name in args[3:]:
+        print(name, "3.0")
+elif args[0] == "formulae":
     print("fzf\ngit\nowner/tools/tapped\n")
 elif args[0] == "casks":
     print("firefox\ngit-client\n")
@@ -89,9 +92,9 @@ class PackageTests(unittest.TestCase):
         self.brew_patch = patch.object(packages, "brew_path", return_value=str(self.brew))
         self.brew_patch.start()
         self.addCleanup(self.brew_patch.stop)
-        native_patch = patch.object(packages, "native_rows", return_value=[])
-        native_patch.start()
-        self.addCleanup(native_patch.stop)
+        self.native_patch = patch.object(packages, "native_rows", return_value=[])
+        self.native_patch.start()
+        self.addCleanup(self.native_patch.stop)
 
     def test_native_apps_are_first_yellow_with_white_names(self):
         app = packages.Row('app', 'app-' + 'a' * 64, '1.2', display_name='My Editor')
@@ -150,6 +153,158 @@ class PackageTests(unittest.TestCase):
                     self.assertEqual(native_plan.apply.called, not dry_run and accepted)
         self.assertEqual(self.mutations(), [])
 
+    def test_leftover_choice_is_explicit_and_remove_only(self):
+        for args in (('install', '--clean-leftovers'), ('update', '--keep-leftovers')):
+            with self.subTest(args=args), self.assertRaises(ValueError):
+                self.invoke(*args)
+        with self.assertRaises(SystemExit):
+            packages.parser().parse_args(['remove', '--clean-leftovers', '--keep-leftovers'])
+        with self.assertRaises(ValueError):
+            self.invoke('remove', '--app-data', '--keep-leftovers')
+
+    def test_interactive_native_uninstall_asks_about_leftovers(self):
+        app = packages.Row('app', 'app-' + 'f' * 64, '1', display_name='Editor')
+        for answer, expected in ((False, False), (True, True)):
+            with self.subTest(answer=answer):
+                with patch('mactools_apps.resolve_apps', return_value=['resolved']), \
+                     patch('mactools_apps.AppUninstallPlan') as factory, \
+                     patch.object(packages, 'confirm', side_effect=[answer, True]) as confirm:
+                    factory.return_value.cask_identities = set()
+                    factory.return_value.apply.return_value = 0
+                    opts = packages.parser().parse_args(['remove'])
+                    queries = packages.Queries(str(self.brew), 15)
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        status = packages.execute_selection(str(self.brew), queries, opts, [app])
+                    self.assertEqual(status, 0)
+                    self.assertEqual(confirm.call_count, 2)
+                    self.assertIn('leftover', confirm.call_args_list[0].args[0].lower())
+                    factory.return_value.apply.assert_called_once_with(600, clean_leftovers=expected)
+
+    def test_native_uninstall_flags_choose_leftover_handling(self):
+        app = packages.Row('app', 'app-' + 'g' * 64, '1', display_name='Editor')
+        for args, expected in (
+            (['remove', '--yes'], False),
+            (['remove', '--clean-leftovers', '--yes'], True),
+            (['remove', '--keep-leftovers', '--yes'], False),
+            (['remove', '--app-data', '--yes'], True),
+        ):
+            with self.subTest(args=args):
+                with patch('mactools_apps.resolve_apps', return_value=['resolved']), \
+                     patch('mactools_apps.AppUninstallPlan') as factory:
+                    factory.return_value.cask_identities = set()
+                    factory.return_value.apply.return_value = 0
+                    opts = packages.parser().parse_args(args)
+                    queries = packages.Queries(str(self.brew), 15)
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        status = packages.execute_selection(str(self.brew), queries, opts, [app])
+                    self.assertEqual(status, 0)
+                    factory.return_value.apply.assert_called_once_with(600, clean_leftovers=expected)
+
+    def test_successful_mutations_patch_selector_snapshots(self):
+        cases = (
+            ('install', packages.Row('formula', 'git', '1'), '3.0'),
+            ('update', packages.Row('formula', 'git', '1', '2.2'), '2.2'),
+        )
+        for action, row, current in cases:
+            with self.subTest(action=action):
+                snapshot = self.write_snapshot(action, [row])
+                self.assertEqual(self.invoke(action, '--yes')[0], 0)
+                payload = json.loads(snapshot.read_text())
+                git = next(line for line in payload['rows'] if line.startswith('formula\tgit\t'))
+                self.assertEqual(packages.Row.parse(git).current, current)
+        snapshot = self.write_snapshot('remove', [packages.Row('formula', 'git', '1')])
+        self.assertEqual(self.invoke('remove', '--yes')[0], 0)
+        payload = json.loads(snapshot.read_text())
+        self.assertFalse(any(line.startswith('formula\tgit\t') for line in payload['rows']))
+
+    def test_uninstall_patch_clears_install_and_update_snapshots(self):
+        install_snapshot = self.write_snapshot('install', [packages.Row('formula', 'git', '1')])
+        update_snapshot = self.write_snapshot('update', [packages.Row('formula', 'git', '1', '2')])
+        remove_snapshot = self.write_snapshot('remove', [packages.Row('formula', 'git', '1')])
+        self.assertEqual(self.invoke('remove', '--yes')[0], 0)
+        install_rows = [packages.Row.parse(line)
+                        for line in json.loads(install_snapshot.read_text())['rows']]
+        self.assertEqual([(row.name, row.current) for row in install_rows], [('git', '-')])
+        self.assertEqual(json.loads(update_snapshot.read_text())['rows'], [])
+        remove_rows = [packages.Row.parse(line)
+                       for line in json.loads(remove_snapshot.read_text())['rows']]
+        self.assertEqual([row.name for row in remove_rows], ['firefox'])
+
+    def test_uninstall_patch_drops_only_removed_app_from_snapshot(self):
+        app = packages.Row('app', 'app-' + 'b' * 64, '1.0', display_name='Editor')
+        other = packages.Row('app', 'app-' + 'c' * 64, '2.0', display_name='Other')
+        snapshot = self.write_snapshot('remove', [packages.Row('formula', 'git', '1')],
+                                       apps=[app, other])
+        with patch('mactools_apps.resolve_apps', return_value=['resolved']), \
+             patch('mactools_apps.AppUninstallPlan') as factory:
+            factory.return_value.cask_identities = set()
+            factory.return_value.apply.return_value = 0
+            opts = packages.parser().parse_args(['remove', '--yes'])
+            queries = packages.Queries(str(self.brew), 15)
+            with contextlib.redirect_stdout(io.StringIO()):
+                status = packages.execute_selection(str(self.brew), queries, opts, [app])
+        self.assertEqual(status, 0)
+        payload = json.loads(snapshot.read_text())
+        self.assertTrue(any(line.startswith('formula\tgit\t') for line in payload['rows']))
+        names = [packages.Row.parse(entry['row']).name for entry in payload['apps']]
+        self.assertNotIn(app.name, names)
+        self.assertIn(other.name, names)
+
+    def test_install_patch_updates_install_and_remove_snapshots(self):
+        install_snapshot = self.write_snapshot('install', [packages.Row('formula', 'git', '-')])
+        remove_snapshot = self.write_snapshot('remove', [])
+        self.assertEqual(self.invoke('install', '--yes')[0], 0)
+        install_rows = [packages.Row.parse(line)
+                        for line in json.loads(install_snapshot.read_text())['rows']]
+        git = next(row for row in install_rows if row.source == 'formula' and row.name == 'git')
+        self.assertEqual(git.current, '3.0')
+        firefox = next(row for row in install_rows if row.source == 'cask' and row.name == 'firefox')
+        self.assertEqual(firefox.current, '120.0')
+        remove_rows = [packages.Row.parse(line)
+                       for line in json.loads(remove_snapshot.read_text())['rows']]
+        self.assertEqual([(row.name, row.current) for row in remove_rows], [('git', '3.0')])
+
+    def test_app_uninstall_patch_drops_owning_cask_row(self):
+        cask = packages.Row('cask', 'homebrew/cask/cherry-studio', '2.0.8')
+        app = packages.Row('app', 'app-' + 'd' * 64, '2.0.8', display_name='Cherry Studio')
+        snapshot = self.write_snapshot('remove', [cask])
+        with patch('mactools_apps.resolve_apps', return_value=['resolved']), \
+             patch('mactools_apps.AppUninstallPlan') as factory:
+            factory.return_value.cask_identities = {(str(self.brew), 'cherry-studio')}
+            factory.return_value.apply.return_value = 0
+            opts = packages.parser().parse_args(['remove', '--keep-leftovers', '--yes'])
+            queries = packages.Queries(str(self.brew), 15)
+            with contextlib.redirect_stdout(io.StringIO()):
+                status = packages.execute_selection(str(self.brew), queries, opts, [app])
+        self.assertEqual(status, 0)
+        self.assertEqual(json.loads(snapshot.read_text())['rows'], [])
+        self.assertEqual(self.mutations(), [])
+
+    def test_expired_selector_snapshot_is_not_patched_or_queried(self):
+        snapshot = self.write_snapshot('remove', [packages.Row('formula', 'git', '1')])
+        payload = json.loads(snapshot.read_text())
+        payload['time'] = 0
+        snapshot.write_text(json.dumps(payload))
+        before = snapshot.read_bytes()
+        queries = packages.Queries(str(self.brew), 2)
+        packages.patch_selector_cache(queries, 'install', [packages.Row('formula', 'git', '-')])
+        self.assertEqual(snapshot.read_bytes(), before)
+        self.assertEqual(self.calls(), [])
+
+    def test_unpatchable_selector_snapshot_falls_back_to_removal(self):
+        snapshot = self.write_snapshot('remove', [packages.Row('formula', 'git', '1')])
+        snapshot.write_text('{not json')
+        queries = packages.Queries(str(self.brew), 2)
+        packages.patch_selector_cache(queries, 'remove', [])
+        self.assertFalse(snapshot.exists())
+
+    def test_dry_run_keeps_selector_snapshot(self):
+        for action in ('install', 'remove', 'update'):
+            with self.subTest(action=action):
+                snapshot = self.write_snapshot(action, [packages.Row('formula', 'git', '1')])
+                self.assertEqual(self.invoke(action, '--dry-run', '--yes')[0], 0)
+                self.assertTrue(snapshot.exists())
+
     def test_cask_dedup_requires_same_homebrew_and_tap(self):
         self.assertEqual(packages.cask_identity(str(self.brew), 'firefox'),
                          packages.cask_identity(str(self.brew), 'homebrew/cask/firefox'))
@@ -157,6 +312,110 @@ class PackageTests(unittest.TestCase):
                             packages.cask_identity(str(self.brew), 'owner/tap/firefox'))
         self.assertNotEqual(packages.cask_identity(str(self.brew), 'firefox'),
                             packages.cask_identity(str(self.root / 'other-brew'), 'firefox'))
+
+    def test_native_app_hides_only_its_exact_cask_row(self):
+        app = packages.Row('app', 'app-' + 'c' * 64, '4.0.10', display_name='CC Switch',
+                           app_path='/Applications/CC Switch.app')
+        item = {'token': 'cc-switch', 'full_token': 'homebrew/cask/cc-switch',
+                'installed': '4.0.10', 'bundle_short_version': '4.0.10',
+                'artifacts': [{'app': ['CC Switch.app'], 'target': '/Applications/CC Switch.app'}]}
+        opts = packages.parser().parse_args(['remove'])
+        opts.include_apps, opts.sources = True, ['formula', 'cask']
+        queries = packages.Queries(str(self.brew), 15)
+        with patch.object(packages, 'native_rows', return_value=[app]), \
+             patch.object(queries, 'capture', return_value=json.dumps({'formulae': [], 'casks': [item]})):
+            result = list(packages.rows(queries, opts))
+        self.assertEqual([row.source for row in result], ['app'])
+        # The hidden cask token is remembered for the next listing, so the
+        # merged app row stays searchable without another brew inventory.
+        self.assertEqual(packages.app_alias_map(),
+                         {packages.app_path_key(app.app_path): 'cc-switch'})
+
+    def test_same_basename_in_another_app_directory_keeps_both_rows(self):
+        app = packages.Row('app', 'app-' + 'd' * 64, '4.0.10', display_name='CC Switch',
+                           app_path='/Users/alice/Applications/CC Switch.app')
+        item = {'token': 'cc-switch', 'full_token': 'homebrew/cask/cc-switch',
+                'installed': '4.0.10',
+                'artifacts': [{'app': ['CC Switch.app'], 'target': '/Applications/CC Switch.app'}]}
+        opts = packages.parser().parse_args(['remove'])
+        opts.include_apps, opts.sources = True, ['formula', 'cask']
+        queries = packages.Queries(str(self.brew), 15)
+        with patch.object(packages, 'native_rows', return_value=[app]), \
+             patch.object(queries, 'capture', return_value=json.dumps({'formulae': [], 'casks': [item]})):
+            result = list(packages.rows(queries, opts))
+        self.assertEqual([row.source for row in result], ['app', 'cask'])
+
+    def test_ambiguous_cask_ownership_keeps_the_app_and_every_cask(self):
+        app = packages.Row('app', 'app-' + 'e' * 64, '1', display_name='Editor',
+                           app_path='/Applications/Editor.app')
+        casks = [
+            {'token': 'editor', 'full_token': 'homebrew/cask/editor', 'installed': '1',
+             'artifacts': [{'app': ['Editor.app'], 'target': '/Applications/Editor.app'}]},
+            {'token': 'editor', 'full_token': 'owner/tap/editor', 'installed': '1',
+             'artifacts': [{'app': ['Editor.app'], 'target': '/Applications/Editor.app'}]},
+        ]
+        opts = packages.parser().parse_args(['remove'])
+        opts.include_apps, opts.sources = True, ['formula', 'cask']
+        queries = packages.Queries(str(self.brew), 15)
+        with patch.object(packages, 'native_rows', return_value=[app]), \
+             patch.object(queries, 'capture', return_value=json.dumps({'formulae': [], 'casks': casks})):
+            result = list(packages.rows(queries, opts))
+        self.assertEqual([row.source for row in result], ['app', 'cask', 'cask'])
+
+    def test_legacy_cached_duplicate_keeps_native_app_until_live_refresh(self):
+        app = packages.Row('app', 'app-' + 'f' * 64, '4.0.10', display_name='CC Switch')
+        cask = packages.Row('cask', 'homebrew/cask/cc-switch', '4.0.10')
+        self.write_snapshot('remove', [cask], apps=[app])
+        opts = packages.parser().parse_args(['remove'])
+        opts.include_apps, opts.sources = True, ['formula', 'cask']
+        queries = packages.Queries(str(self.brew), 15)
+        cached = packages.cached_selector(queries, opts)
+        self.assertEqual(cached, [app])
+        # A legacy snapshot hides the cask without losing its search token.
+        self.assertEqual(cached[0].search_alias, 'cc-switch')
+
+    def test_selector_alias_roundtrip_and_native_lookup(self):
+        app = packages.Row('app', 'app-' + 'a' * 64, '1', display_name='CC Switch',
+                           app_path=str(self.root / 'Applications/CC Switch.app'),
+                           search_alias='cc-switch')
+        opts = packages.parser().parse_args(['remove'])
+        opts.include_apps, opts.sources = True, ['formula', 'cask']
+        queries = packages.Queries(str(self.brew), 15)
+        packages.save_selector(queries, opts, [app])
+        self.assertEqual(packages.cached_selector(queries, opts), [app])
+        packages.save_app_alias_map({packages.app_path_key(app.app_path): 'cc-switch'})
+        self.assertEqual(packages.app_alias_map(),
+                         {packages.app_path_key(app.app_path): 'cc-switch'})
+        installed = Mock(id=app.name, version='1', path=app.app_path)
+        installed.name = 'CC Switch'
+        self.native_patch.stop()
+        with patch('mactools_apps.installed_apps', return_value=[installed]):
+            self.assertEqual(packages.native_rows(opts), [app])
+
+    def test_selector_alias_is_displayed_dim_and_never_leaks_into_records(self):
+        app = packages.Row('app', 'app-' + 'a' * 64, '4.0.10', display_name='CC Switch',
+                           search_alias='cc-switch')
+        with patch.dict(os.environ, NO_COLOR='', TERM='xterm-256color'):
+            colored = app.selector_line('remove', (60, 18))
+        self.assertIn('\033[38;5;243m · cc-switch\033[0m', colored)
+        self.assertIn('CC Switch · cc-switch', packages.without_color(colored))
+        self.assertNotIn('cc-switch', app.line())
+        # A token that cannot fit is hidden rather than clipped: clipping would
+        # display a query that fzf can no longer match.
+        self.assertNotIn('cc-switch',
+                         packages.without_color(app.selector_line('remove', (20, 18))))
+
+    def test_malformed_cached_alias_is_ignored(self):
+        opts = packages.parser().parse_args(['remove'])
+        opts.include_apps, opts.sources = True, ['formula', 'cask']
+        queries = packages.Queries(str(self.brew), 15)
+        row = packages.Row('app', 'app-' + 'a' * 64, '1', display_name='Editor')
+        snapshot = self.write_snapshot('remove', [], apps=[row])
+        payload = json.loads(snapshot.read_text())
+        for alias in ('bad token', '..', 3):
+            payload['apps'][0]['alias'] = alias
+            snapshot.write_text(json.dumps(payload))
+            self.assertIsNone(packages.cached_selector(queries, opts))
 
     def test_native_failure_stops_remaining_brew_operations(self):
         opts = packages.parser().parse_args(['remove', '--yes'])
@@ -213,6 +472,23 @@ class PackageTests(unittest.TestCase):
                                 input=data, capture_output=True, text=True, env=env, check=True)
         self.assertEqual([packages.Row.parse(line).source for line in result.stdout.splitlines()], ['app', 'cask'])
 
+    @unittest.skipUnless(REAL_FZF, 'host fzf unavailable')
+    def test_real_fzf_matches_hidden_cask_alias_on_the_app_row(self):
+        app = packages.Row('app', 'app-' + 'a' * 64, '4.0.10',
+                           display_name='CC Switch', search_alias='cc-switch')
+        data = app.selector_line('remove') + '\n'
+        env = dict(os.environ)
+        env.pop('FZF_DEFAULT_OPTS', None)
+        env.pop('FZF_DEFAULT_OPTS_FILE', None)
+        for query in ('cc-switch', 'ccswitch', 'CC Switch'):
+            with self.subTest(query=query):
+                result = subprocess.run([REAL_FZF, '--ansi', '--delimiter=\t', '--nth=2',
+                                         '--with-nth=5..', '--no-sort', '--sync',
+                                         '--filter=' + query],
+                                        input=data, capture_output=True, text=True, env=env)
+                self.assertEqual([packages.Row.parse(line).source
+                                  for line in result.stdout.splitlines()], ['app'])
+
     def calls(self):
         path = self.root / "brew.log"
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
@@ -226,11 +502,14 @@ class PackageTests(unittest.TestCase):
     def mutations(self):
         return [call["args"] for call in self.calls() if call["args"][0] in ("install", "uninstall", "upgrade", "update")]
 
-    def write_snapshot(self, action, result, sources=None):
+    def write_snapshot(self, action, result, sources=None, apps=None):
         snapshot = self.root / ('cache/mactools/selector-' + action + '.json')
         snapshot.parent.mkdir(parents=True, exist_ok=True)
-        snapshot.write_text(json.dumps({'brew': str(self.brew), 'time': time.time(),
-            'sources': sources or ['formula', 'cask'], 'rows': [row.line() for row in result]}))
+        payload = {'brew': str(self.brew), 'time': time.time(),
+            'sources': sources or ['formula', 'cask'], 'rows': [row.line() for row in result]}
+        if apps is not None:
+            payload['apps'] = [{'row': row.line(), 'display_name': row.display_name} for row in apps]
+        snapshot.write_text(json.dumps(payload))
         return snapshot
 
     def cached_fzf(self, reload=False):

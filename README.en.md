@@ -20,7 +20,7 @@
   <a href="README.md">简体中文</a> · <strong>English</strong>
 </p>
 
-Ported from [ubtools](https://github.com/tingfeng347/ubtools). Use `ma + action` and shortcuts such as `maci` to manage Homebrew Formulae and Casks, native apps and leftovers, disk cleanup, system optimization, mirrors, and AI coding tools. Cleanup, app removal, and optimization reuse the open-source [Mole](https://github.com/tw93/Mole) implementation, with a preview before confirmation.
+Use `ma + action` and shortcuts such as `maci` to manage Homebrew Formulae and Casks, native apps and leftovers, disk cleanup, system optimization, mirrors, and AI coding tools. Cleanup, app removal, and optimization reuse the open-source [Mole](https://github.com/tw93/Mole) implementation, with a preview before confirmation.
 
 ```bash
 ma install firefox
@@ -42,9 +42,9 @@ Search and select packages: white names, right-aligned versions, and green `✓`
 <details>
 <summary>More interfaces: app removal, disk cleanup, and system optimization</summary>
 
-**App removal with `macr`**: native apps appear first with yellow `app` labels. Press Enter to scan leftovers before confirming removal.
+**App removal with `macr`**: native apps appear first with yellow `app` labels. Press Enter to scan leftovers, then choose whether to clean them before confirming removal.
 
-![macr searching for CC Switch with native app and Homebrew cask entries](docs/images/remove-color.png)
+![macr searching for CC Switch with one native row for the cask-managed app](docs/images/remove-color.png)
 
 **Disk cleanup with `macc`**: select Homebrew caches, unused dependencies, build output, and application caches; inspect the scope on the right.
 
@@ -168,6 +168,8 @@ maci --refresh               # Fetch the name catalog again
 macr                        # Native apps first, then Homebrew packages
 macr --apps                 # Native applications and leftovers only
 macr --apps --app-data       # Include personal data in the reviewed plan
+macr --apps --clean-leftovers # Uninstall apps and clean previewed leftovers
+macr --apps --keep-leftovers # Uninstall apps and explicitly keep leftovers
 macr --cask firefox          # Homebrew casks only
 macr --dry-run firefox      # Show the removal plan after selection
 
@@ -178,7 +180,7 @@ macu --dry-run              # Preview selected update commands
 macu --refresh-index        # Confirm and run brew update before listing updates
 ```
 
-Install, remove, and update operations display a plan and request confirmation. `--yes` skips only mactools confirmation; Homebrew retains its own transaction prompts. Commands never use `sudo brew`, and removal does not pass `--zap`.
+Install, remove, and update operations display a plan and request confirmation. `--yes` skips only mactools confirmation; Homebrew retains its own transaction prompts. It never decides whether to clean app leftovers for you; scripts that want cleanup must pass `--clean-leftovers` explicitly. Commands never use `sudo brew`, and removal does not pass `--zap`.
 
 The install selector shows package source, name, and installed version, with Homebrew details in the preview. The update selector shows installed and target versions. Search matches only names, excluding source, version, and installation status.
 
@@ -194,9 +196,9 @@ Keyboard hints and column headings appear on separate lines. Types use `formula`
 | `Ctrl+/` | Show / hide package details |
 | `Esc` | Exit and stop background package queries |
 
-`macr` places native applications first with yellow `app` labels and white names. Homebrew `cask` / `formula` colors remain blue or purple. Application removal reuses Mole source and previews bundles and leftovers before confirmation. Personal preferences and support data are kept by default; `--app-data` includes them in the plan. Native files move to Trash; Homebrew apps use `brew uninstall --cask`. Selecting both views of one app uninstalls it once. Any need for administrator access or quitting a running app is shown in the preview and acted on after confirmation. Explicit `--formula` / `--cask` filters select Homebrew packages; `--apps` selects native apps and can be combined with either filter.
+`macr` places native applications first with yellow `app` labels and white names. Homebrew `cask` / `formula` colors remain blue or purple. An app installed by a cask is shown once when the cask artifact's absolute target exactly matches the app bundle; the native `app` row remains available for leftover cleanup and keeps the cask token as a dim search alias, so `cc-switch` still matches it, while casks without a matching app bundle still appear separately. Application removal reuses Mole source and previews bundles and leftovers before confirmation. It then asks whether to clean the leftovers (kept by default); `--clean-leftovers` cleans them directly and `--keep-leftovers` always keeps them. Personal preferences and support data are kept by default; `--app-data` includes them in the cleanup scope. Native files move to Trash; Homebrew apps use `brew uninstall --cask`. Selecting both views of one app uninstalls it once. Any need for administrator access or quitting a running app is shown in the preview and acted on after confirmation. Explicit `--formula` / `--cask` filters select Homebrew packages; `--apps` selects native apps and can be combined with either filter.
 
-`maci`, `macu` and `macr` first show a list snapshot from the last 24 hours, then refresh it in the background without restarting the selector. First use still loads live data. Search and selection remain available during refresh; recent fzf versions retain selected packages. Pressing Enter early waits for the refresh to verify the selection. Removed packages and updates no longer needed are skipped; cached state never authorizes a package change. Single-type `--formula` / `--cask` selectors can reuse a combined snapshot, and live queries request only the required type. Switching details cancels the old preview query to avoid accumulating background work. Name catalogs are cached for one hour; `Ctrl+R` forces a catalog refresh. Cache defaults to `~/Library/Caches/mactools` and respects `XDG_CACHE_HOME`. `--list` always uses live state. `--list` and `--dry-run` neither write mactools cache nor change packages.
+`maci`, `macu` and `macr` first show a list snapshot from the last 24 hours, then refresh it in the background without restarting the selector. After an install, remove, or update runs, only the affected rows are patched in place: removed packages are dropped from the snapshot and installed or upgraded packages get their real version, so the rest of the cache stays warm and the next run is still fast. A snapshot is discarded and rebuilt live only when it is expired, corrupt, or cannot be patched safely. First use still loads live data. Search and selection remain available during refresh; recent fzf versions retain selected packages. Pressing Enter early waits for the refresh to verify the selection. Removed packages and updates no longer needed are skipped; cached state never authorizes a package change. Single-type `--formula` / `--cask` selectors can reuse a combined snapshot, and live queries request only the required type. Switching details cancels the old preview query to avoid accumulating background work. Name catalogs are cached for one hour; `Ctrl+R` forces a catalog refresh. Cache defaults to `~/Library/Caches/mactools` and respects `XDG_CACHE_HOME`. `--list` always uses live state. `--list` and `--dry-run` neither write mactools cache nor change packages.
 
 Package queries time out after 15 seconds per request by default; adjust with `--timeout 30`. App details show metadata immediately; leftover discovery starts after Enter, with a separate 120-second budget per app, added together for multiple selections. Adjust it with `macr --scan-timeout 240`. A timed-out scan cancels the plan without uninstalling anything. Only an explicit `ma update --refresh-index` refreshes the Homebrew index. It cannot be combined with `--list` or `--dry-run`.
 
@@ -383,9 +385,9 @@ ma completion fish | source
 
 Completion covers `ma` and all eight shortcuts, without network queries during completion.
 
-## Porting and validation
+## Development and validation
 
-The project was developed on three parallel feature branches, then reviewed and merged by an independent agent. See the [porting specification](docs/PORTING.md) for feature mapping and the [review report](docs/REVIEW.md) for the initial integration review. The original reference source is kept locally in `.reference/ubtools`, and parallel working directories are kept in `.worktrees`; neither directory is included in the public repository.
+See the [functional specification](docs/SPEC.md) for scope and development contracts, and the [review report](docs/REVIEW.md) for the initial integration review.
 
 ```bash
 python3 -m unittest discover -s tests -v
@@ -393,4 +395,4 @@ python3 -m unittest discover -s tests -v
 
 Tests use temporary directories, fake package managers, local HTTP servers, and pseudo-terminals without installing, updating, or removing actual host software. Local regression checks cover real fzf name filtering and cleanup bindings. CI checks Python 3.9 and 3.13 on macOS and Linux; installer lifecycle tests run only on macOS. See the CI badge above for remote results.
 
-The reference source is pinned to ubtools commit `e2a05261f07207590b3065fa447641c32b4afe0f`. macOS adaptation references: [Homebrew commands](https://docs.brew.sh/Manpage), [Homebrew JSON API](https://docs.brew.sh/Querying-Brew), [Tsinghua bottle mirror](https://mirrors.tuna.tsinghua.edu.cn/help/homebrew-bottles/), and [USTC bottle mirror](https://mirrors.ustc.edu.cn/help/homebrew-bottles.html).
+macOS adaptation references: [Homebrew commands](https://docs.brew.sh/Manpage), [Homebrew JSON API](https://docs.brew.sh/Querying-Brew), [Tsinghua bottle mirror](https://mirrors.tuna.tsinghua.edu.cn/help/homebrew-bottles/), and [USTC bottle mirror](https://mirrors.ustc.edu.cn/help/homebrew-bottles.html).

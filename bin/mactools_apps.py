@@ -235,7 +235,7 @@ class AppUninstallPlan:
     def close(self):
         self._temporary.cleanup()
 
-    def _run(self, mode, timeout=None):
+    def _run(self, mode, timeout=None, clean_leftovers=True):
         if not self._unpacked:
             unpack_bundle(self.path / 'engine')
             self._unpacked = True
@@ -245,6 +245,7 @@ class AppUninstallPlan:
             argv += ['1' if self.with_data else '0', str(self.path / 'owners.bin')]
         else:
             argv += [str(self.path / name) for name in ('details.bin', 'approved.bin', 'owners.bin')]
+            argv.append('0' if clean_leftovers else '1')
         budget = timeout if timeout is not None else self.scan_timeout
         try:
             status = run_engine(argv, _environment(), budget, interactive=mode == 'apply')
@@ -277,10 +278,36 @@ class AppUninstallPlan:
         details = (self.path / 'details.bin').read_bytes()
         if not details or not details.endswith(b'\0') or details.count(b'\0') != len(self.apps):
             raise ValueError('Incomplete application uninstall preview.')
+        self._prepare_apps_only_details()
         self.cask_names = {os.fsdecode(value) for value in (self.path / 'casks.bin').read_bytes().split(b'\0') if value}
         self.reviewed = True
 
-    def apply(self, timeout=600):
+    def _prepare_apps_only_details(self):
+        """Build a plan that removes only app bundles and keeps every leftover.
+
+        The preview record layout is:
+        name|path|bundle|total_kb|encoded_files|encoded_system_files|
+        sensitive|needs_sudo|is_brew_cask|cask|encoded_diag|encoded_review|...
+
+        Clearing the three deletion lists keeps every discovered leftover while
+        preserving the bundle identity, cask ownership, and teardown fields the
+        engine needs to remove just the application itself.
+        """
+        source = (self.path / 'details.bin').read_bytes()
+        target = Path(str(self.path / 'details.bin') + '.apps-only')
+        output = []
+        for record in source.split(b'\0')[:-1]:
+            fields = os.fsdecode(record).split('|')
+            if len(fields) < 11:
+                raise ValueError('Incomplete application uninstall preview.')
+            for index in (4, 5, 10):
+                fields[index] = ''
+            output.append(os.fsencode('|'.join(fields)) + b'\0')
+        target.write_bytes(b''.join(output))
+        target.chmod(0o600)
+        return target
+
+    def apply(self, timeout=600, clean_leftovers=True):
         if not self.reviewed:
             raise ValueError('Preview the application uninstall plan before applying it.')
         # A plan is one-shot even if the process fails after doing partial work.
@@ -290,7 +317,7 @@ class AppUninstallPlan:
                 raise ValueError('Homebrew executable changed after preview; select again.')
             if _cask_owners(self.apps, self.timeout) != self._owners:
                 raise ValueError('Homebrew application ownership changed after preview; select again.')
-            return self._run('apply', timeout)
+            return self._run('apply', timeout, clean_leftovers=clean_leftovers)
         finally:
             self.reviewed = False
 

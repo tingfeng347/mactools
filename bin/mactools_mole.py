@@ -10,7 +10,7 @@ from pathlib import Path, PurePosixPath
 
 from mactools_runtime import text
 
-BUNDLE_SHA256 = '23d2d5f0bacdf960a4a2f77950c4528290681ac67e339613ca9ff9d227eddf9c'
+BUNDLE_SHA256 = '2327034e5e3642495f3c792ef995b15565bd1c82fa30e8c25acf645dff1e4572'
 
 
 def mole_info():

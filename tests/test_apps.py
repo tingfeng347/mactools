@@ -100,7 +100,8 @@ class AppIdentity(unittest.TestCase):
         def unpack(destination):
             destination.mkdir()
             (destination / 'mactools-apps.sh').write_text(
-                'sleep 0.1\nprintf "fixture\\0" > "$3"\n')
+                'sleep 0.1\n'
+                'printf "%s\\0" "fixture|/tmp/fixture.app|bundle|0||||false|false|false||" > "$3"\n')
 
         def launch(argv, env, timeout, interactive=False):
             return subprocess.run(argv, env=env, timeout=timeout, check=True).returncode
@@ -217,6 +218,47 @@ ma_apps_main "$@"
         self.assertEqual(app[0].path, str(path))
         self.assertFalse((self.home / 'quit').exists())
         self.assertFalse((self.home / 'teardown').exists())
+
+    def test_apps_only_plan_clears_deletion_lists_but_keeps_identity(self):
+        path = self.app()
+        plan = self.plan(path)
+        record = '|'.join((
+            'Fixture', str(path), 'net.mactools.fixture', '10',
+            'ENCODED_FILES', 'ENCODED_SYSTEM', 'true', 'true', 'true',
+            'owner/tap/fixture', 'ENCODED_DIAG', 'ENCODED_REVIEW', 'HELPERS',
+            'guard_login', 'identity', 'original', 'fingerprint', 'info'))
+        (plan.path / 'details.bin').write_bytes(os.fsencode(record) + b'\0')
+        target = plan._prepare_apps_only_details()
+        fields = os.fsdecode(target.read_bytes()[:-1]).split('|')
+        self.assertEqual(fields[4], '')
+        self.assertEqual(fields[5], '')
+        self.assertEqual(fields[6:10], ['true', 'true', 'true', 'owner/tap/fixture'])
+        self.assertEqual(fields[10], '')
+        self.assertEqual(fields[11:], ['ENCODED_REVIEW', 'HELPERS', 'guard_login',
+                                       'identity', 'original', 'fingerprint', 'info'])
+
+    def test_keep_leftovers_uninstalls_only_the_app(self):
+        path = self.app()
+        cache = self.file('Library/Caches/net.mactools.fixture/payload')
+        preferences = self.file('Library/Preferences/net.mactools.fixture.plist')
+        plan = self.plan(path)
+        plan.preview()
+        plan.apply(30, clean_leftovers=False)
+        self.assertFalse(path.exists(), self.output)
+        self.assertTrue(cache.exists(), self.output)
+        self.assertTrue(preferences.exists(), self.output)
+        self.assertTrue((self.home / '.Trash').exists(), self.output)
+
+    def test_clean_leftovers_removes_discovered_cache_but_keeps_preferences(self):
+        path = self.app()
+        cache = self.file('Library/Caches/net.mactools.fixture/payload')
+        preferences = self.file('Library/Preferences/net.mactools.fixture.plist')
+        plan = self.plan(path)
+        plan.preview()
+        plan.apply(30, clean_leftovers=True)
+        self.assertFalse(path.exists(), self.output)
+        self.assertFalse(cache.exists(), self.output)
+        self.assertTrue(preferences.exists(), self.output)
 
     def test_preview_and_apply_only_reviewed_cache_default_keeps_personal_data(self):
         path = self.app()

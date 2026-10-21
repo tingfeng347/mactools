@@ -199,17 +199,35 @@ ma_apps_preview() {
 }
 
 ma_apps_apply() {
-    local details="$1" ledger="$2" owners="$3" path parent parent_id target_id tree detail
-    ma_apps_private_file "$details" && ma_apps_private_file "$ledger" || return 2
+    local details="$1" ledger="$2" owners="$3" keep_leftovers="${4:-0}"
+    local path parent parent_id target_id tree detail
+    ma_apps_private_file "$ledger" || return 2
     ma_apps_load_owners "$owners" || return $?
+    if [[ "$keep_leftovers" == 1 ]]; then
+        details="${details}.apps-only"
+    fi
+    ma_apps_private_file "$details" || return 2
+    local -a app_details=()
+    ma_apps_read_details "$details" || return 1
+    local -a MA_APP_BUNDLES=()
+    for detail in "${app_details[@]}"; do
+        IFS='|' read -r _ app_bundle _ <<< "$detail"
+        MA_APP_BUNDLES+=("$app_bundle")
+    done
     local -a MA_APP_PATHS=() MA_APP_PARENTS=() MA_APP_PARENT_IDS=() MA_APP_IDS=() MA_APP_TREES=()
+    local keep_record
     while IFS= read -r -d '' path && IFS= read -r -d '' parent &&
         IFS= read -r -d '' parent_id && IFS= read -r -d '' target_id && IFS= read -r -d '' tree; do
+        if [[ "$keep_leftovers" == 1 ]]; then
+            keep_record=false
+            for detail in "${MA_APP_BUNDLES[@]}"; do
+                [[ "$path" == "$detail" ]] && keep_record=true && break
+            done
+            [[ "$keep_record" == true ]] || continue
+        fi
         MA_APP_PATHS+=("$path"); MA_APP_PARENTS+=("$parent")
         MA_APP_PARENT_IDS+=("$parent_id"); MA_APP_IDS+=("$target_id"); MA_APP_TREES+=("$tree")
     done < "$ledger"
-    local -a app_details=()
-    ma_apps_read_details "$details" || return 1
     # Fail before process/service teardown if any previewed object was replaced.
     for path in "${MA_APP_PATHS[@]}"; do
         ma_apps_approved "$path" || { printf 'Changed after preview; nothing removed: %s\n' "$(mole_terminal_safe_text "$path")" >&2; return 1; }
@@ -249,7 +267,8 @@ ma_apps_apply() {
     fi
     local total_size_freed=0 success_count=0 failed_count=0 brew_apps_removed=0
     local -a failed_items=() success_items=() success_names=() success_dock_targets=()
-    local -a system_extension_warning_apps=() review_only_system_leftovers=() review_only_system_leftover_keys=() running_at_uninstall_apps=()
+    local -a system_extension_warning_apps=() review_only_system_leftovers=() review_only_system_leftover_keys=()
+    local -a background_items_warning_apps=() running_at_uninstall_apps=()
     local _batch_exec_app_name="" _batch_exec_stage=""
     local status=0
     _batch_execute_removals || status=$?

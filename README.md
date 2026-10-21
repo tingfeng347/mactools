@@ -20,7 +20,7 @@
   <strong>简体中文</strong> · <a href="README.en.md">English</a>
 </p>
 
-移植自 [ubtools](https://github.com/tingfeng347/ubtools)，使用 `ma + 动作` 和 `maci` 等快捷命令，统一管理 Homebrew Formula / Cask、本机应用与残留、空间清理、系统优化、镜像源和 AI 编程工具。清理、应用卸载与优化复用 [Mole](https://github.com/tw93/Mole) 的开源实现，先预览，再确认执行。
+使用 `ma + 动作` 和 `maci` 等快捷命令，统一管理 Homebrew Formula / Cask、本机应用与残留、空间清理、系统优化、镜像源和 AI 编程工具。清理、应用卸载与优化复用 [Mole](https://github.com/tw93/Mole) 的开源实现，先预览，再确认执行。
 
 ```bash
 ma install firefox
@@ -42,9 +42,9 @@ ma ai install --all --dry-run
 <details>
 <summary>更多界面：应用卸载、空间清理与系统优化</summary>
 
-**应用卸载 `macr`**：本机应用使用黄色 `app` 标识并置顶；按 Enter 后扫描残留，再确认卸载。
+**应用卸载 `macr`**：本机应用使用黄色 `app` 标识并置顶；按 Enter 后扫描残留，再选择是否清理并确认卸载。
 
-![macr 搜索 CC Switch，展示本机应用与 Homebrew cask](docs/images/remove-color.png)
+![macr 搜索 CC Switch，cask 管理的应用只保留一条本机应用记录](docs/images/remove-color.png)
 
 **空间清理 `macc`**：选择 Homebrew 缓存、无用依赖、构建产物与应用缓存，右侧查看影响范围。
 
@@ -168,6 +168,8 @@ maci --refresh               # 重新获取名称目录
 macr                        # 本机应用排在前面，随后是 Homebrew 软件
 macr --apps                 # 只选择本机应用及残留
 macr --apps --app-data       # 同时预览个人数据，确认后卸载
+macr --apps --clean-leftovers # 卸载应用并清理预览中的残留
+macr --apps --keep-leftovers # 只卸载应用，明确保留预览中的残留
 macr --cask firefox          # 仅 Homebrew cask
 macr --dry-run firefox      # 选择后只显示卸载计划
 
@@ -178,7 +180,7 @@ macu --dry-run              # 只预览选中的更新命令
 macu --refresh-index        # 先确认并执行 brew update，再查看更新
 ```
 
-安装、卸载、更新都会显示操作计划并确认；`--yes` 仅跳过 mactools 的确认，保留 Homebrew 自己的事务提示。不会使用 `sudo brew`，卸载不传入 `--zap`。
+安装、卸载、更新都会显示操作计划并确认；`--yes` 仅跳过 mactools 的确认，保留 Homebrew 自己的事务提示。它不会替你决定是否清理应用残留；脚本需要清理时请显式传入 `--clean-leftovers`。不会使用 `sudo brew`，卸载不传入 `--zap`。
 
 安装界面展示来源、名称和已安装版本，预览区显示 Homebrew 软件详情。更新界面展示已安装版本和目标版本。搜索只匹配名称，来源、版本和安装状态不参与匹配。
 
@@ -194,9 +196,9 @@ macu --refresh-index        # 先确认并执行 brew update，再查看更新
 | `Ctrl+/` | 显示 / 收起软件详情 |
 | `Esc` | 退出并终止后台列表查询 |
 
-`macr` 的本机应用使用黄色 `app` 标识并排在列表前面，名称保持白色；Homebrew 的 `cask` / `formula` 仍使用蓝色或紫色。应用卸载复用 Mole 源码，确认前列出应用本体及残留；默认保留个人偏好与支持数据，`--app-data` 才将这些数据纳入计划。本机文件移到废纸篓，Homebrew 管理的应用由 `brew uninstall --cask` 卸载；同时选择应用与对应 cask 时只执行一次。需要管理员权限或退出运行中的应用时，会在预览中说明，确认后才执行。`--formula` / `--cask` 单独使用时只选择对应 Homebrew 类型，`--apps` 只列本机应用，也可与这两个选项组合。
+`macr` 的本机应用使用黄色 `app` 标识并排在列表前面，名称保持白色；Homebrew 的 `cask` / `formula` 仍使用蓝色或紫色。已由 cask 安装且 artifact 的绝对目标路径与应用完全一致时只显示一次，并保留 `app` 行以使用残留清理；没有对应应用本体的 cask 仍单独显示。合并后的 `app` 行会在名称后用灰色显示所属 cask token，输入 `cc-switch` 这类 cask 名称仍可直接命中。应用卸载复用 Mole 源码，确认前列出应用本体及残留，并询问是否同时清理残留（默认保留）；`--clean-leftovers` 直接清理，`--keep-leftovers` 明确保留。个人偏好与支持数据默认保留，`--app-data` 才会将这些数据纳入清理范围。本机文件移到废纸篓，Homebrew 管理的应用由 `brew uninstall --cask` 卸载；同时选择应用与对应 cask 时只执行一次。需要管理员权限或退出运行中的应用时，会在预览中说明，确认后才执行。`--formula` / `--cask` 单独使用时只选择对应 Homebrew 类型，`--apps` 只列本机应用，也可与这两个选项组合。
 
-`maci`、`macu`、`macr` 优先显示最近 24 小时内的列表快照，后台重新查询并动态替换列表；首次使用仍需加载数据。刷新期间可以继续搜索和多选，新版 fzf 会保留已选软件。提前按 Enter 时会等待后台核对完成，已卸载或不再需要更新的软件会跳过；缓存不会直接决定包变更。单独筛选 `--formula` / `--cask` 时也可复用完整列表缓存，实时查询只读取所需类型。切换详情会停止旧的预览查询，避免后台查询积压。名称目录缓存一小时，`Ctrl+R` 会强制刷新目录。缓存默认在 `~/Library/Caches/mactools`，遵循 `XDG_CACHE_HOME`。`--list` 始终读取实时状态，`--list` 与 `--dry-run` 不写工具缓存，也不执行包变更。
+`maci`、`macu`、`macr` 优先显示最近 24 小时内的列表快照，后台重新查询并动态替换列表；首次使用仍需加载数据。安装、卸载或更新执行后只就地更新本次涉及的行：卸载项从快照中移除，安装/升级项写入实际版本，其余缓存原样复用，因此下次打开仍然很快；只有快照损坏、过期或无法安全更新时才回退为重新读取实时状态。刷新期间可以继续搜索和多选，新版 fzf 会保留已选软件。提前按 Enter 时会等待后台核对完成，已卸载或不再需要更新的软件会跳过；缓存不会直接决定包变更。单独筛选 `--formula` / `--cask` 时也可复用完整列表缓存，实时查询只读取所需类型。切换详情会停止旧的预览查询，避免后台查询积压。名称目录缓存一小时，`Ctrl+R` 会强制刷新目录。缓存默认在 `~/Library/Caches/mactools`，遵循 `XDG_CACHE_HOME`。`--list` 始终读取实时状态，`--list` 与 `--dry-run` 不写工具缓存，也不执行包变更。
 
 包查询默认每项超时 15 秒，可用 `--timeout 30` 调整。应用详情只读取基本信息；按 Enter 后才扫描残留，默认每个应用最多 120 秒，多选时累加，可用 `macr --scan-timeout 240` 调整。扫描超时会取消计划，不执行卸载。仅显式 `ma update --refresh-index` 会刷新 Homebrew 索引；它不能与 `--list` / `--dry-run` 组合。
 
@@ -383,9 +385,9 @@ ma completion fish | source
 
 补全覆盖 `ma` 和八个缩写入口，不在补全期间联网查询。
 
-## 移植与验证
+## 开发与验证
 
-本项目按三个功能分支并行开发，再由独立 agent 审查与合并。规格与功能对应见 [移植规格](docs/PORTING.md)，初次集成审查记录见 [审查报告](docs/REVIEW.md)。开发时的原始参考源码位于本地 `.reference/ubtools`，并行工作目录位于 `.worktrees`；两个目录都不包含在公开仓库中。
+功能范围与开发契约见 [功能规格](docs/SPEC.md)，初次集成审查记录见 [审查报告](docs/REVIEW.md)。
 
 ```bash
 python3 -m unittest discover -s tests -v
@@ -393,4 +395,4 @@ python3 -m unittest discover -s tests -v
 
 测试使用临时目录、假包管理器、本地 HTTP 服务和伪终端；不会安装、更新或卸载宿主机上的实际软件。本地回归检查覆盖真实 fzf 的名称过滤和清理绑定。CI 在 macOS 和 Linux 上分别验证 Python 3.9 / 3.13，安装器生命周期测试仅在 macOS 运行；远端结果见顶部 CI 徽章。
 
-参考源固定为 ubtools `e2a05261f07207590b3065fa447641c32b4afe0f`。macOS 适配依据：[Homebrew 命令文档](https://docs.brew.sh/Manpage)、[Homebrew JSON 接口](https://docs.brew.sh/Querying-Brew)、[清华 bottle 镜像](https://mirrors.tuna.tsinghua.edu.cn/help/homebrew-bottles/)、[中科大 bottle 镜像](https://mirrors.ustc.edu.cn/help/homebrew-bottles.html)。
+macOS 适配依据：[Homebrew 命令文档](https://docs.brew.sh/Manpage)、[Homebrew JSON 接口](https://docs.brew.sh/Querying-Brew)、[清华 bottle 镜像](https://mirrors.tuna.tsinghua.edu.cn/help/homebrew-bottles/)、[中科大 bottle 镜像](https://mirrors.ustc.edu.cn/help/homebrew-bottles.html)。

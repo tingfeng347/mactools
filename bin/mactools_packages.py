@@ -2,7 +2,7 @@
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 import json
 import math
 import os
@@ -39,9 +39,12 @@ def without_color(value):
     return re.sub(r"\x1b\[[0-9;]*m", "", value)
 
 
+def display_width(value):
+    return sum(2 if unicodedata.east_asian_width(char) in ("W", "F") else 1 for char in value)
+
+
 def cell(value, width, right=False, center=False):
-    used = sum(2 if unicodedata.east_asian_width(char) in ("W", "F") else 1 for char in value)
-    padding = " " * max(0, width - used)
+    padding = " " * max(0, width - display_width(value))
     if center:
         left = len(padding) // 2
         return padding[:left] + value + padding[left:]
@@ -49,7 +52,7 @@ def cell(value, width, right=False, center=False):
 
 
 def clip_cell(value, width):
-    if sum(2 if unicodedata.east_asian_width(c) in ('W', 'F') else 1 for c in value) <= width:
+    if display_width(value) <= width:
         return value
     result, used = '', 0
     for char in value:
@@ -79,6 +82,79 @@ def package_name(value):
     return value
 
 
+def app_path_key(value):
+    """Normalize a local app bundle path for exact cask ownership matching.
+
+    Relative artifact names are deliberately rejected: without an absolute
+    target Homebrew's appdir may differ from the app we are looking at.
+    """
+    if not isinstance(value, str) or not value:
+        return ''
+    try:
+        expanded = os.path.expanduser(value)
+        if not os.path.isabs(expanded):
+            return ''
+        return os.path.normcase(os.path.realpath(expanded))
+    except (OSError, ValueError):
+        return ''
+
+
+def cask_app_paths(item):
+    """Return only app targets proven by the installed-cask inventory."""
+    targets = set()
+    artifacts = item.get('artifacts')
+    if not isinstance(artifacts, list):
+        return targets
+    for artifact in artifacts:
+        if not isinstance(artifact, dict) or not isinstance(artifact.get('app'), list):
+            continue
+        candidates = [artifact.get('target')]
+        for entry in artifact['app']:
+            if isinstance(entry, str):
+                candidates.append(entry)
+            elif isinstance(entry, dict):
+                candidates.append(entry.get('target'))
+        for value in candidates:
+            key = app_path_key(value)
+            if key:
+                targets.add(key)
+    return targets
+
+
+def app_alias_path():
+    return cache_dir() / 'app-casks.json'
+
+
+def app_alias_map():
+    """Read cached cask tokens keyed by the exact installed app bundle path.
+
+    The token is a search hint only. A selected app row is still resolved and
+    revalidated against the live inventory before anything is removed.
+    """
+    try:
+        payload = json.loads(app_alias_path().read_text())
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    aliases = {}
+    for path, token in payload.items():
+        key = app_path_key(path)
+        if key and isinstance(token, str) and NAME.fullmatch(token):
+            aliases[key] = token
+    return aliases
+
+
+def save_app_alias_map(aliases):
+    """Replace the alias hint file atomically; failures never block a listing."""
+    try:
+        if aliases == app_alias_map():
+            return
+        save_selector_payload(app_alias_path(), dict(sorted(aliases.items())))
+    except OSError:
+        pass
+
+
 @dataclass(frozen=True)
 class Row:
     source: str
@@ -86,6 +162,12 @@ class Row:
     current: str = "-"
     target: str = "-"
     display_name: str = ""
+    # Local-only hint used to hide a cask row when its exact app bundle is
+    # already shown. It is deliberately absent from selector/cache records.
+    app_path: str = field(default="", compare=False, repr=False)
+    # Local-only search hint: the owning cask token of a managed app. It keeps
+    # the merged app row searchable without bringing the duplicate cask back.
+    search_alias: str = field(default="", compare=False, repr=False)
 
     def line(self):
         return "\t".join((self.source, self.name, clean(self.current), clean(self.target)))
@@ -97,14 +179,30 @@ class Row:
         name_width, version_width = widths or selector_widths(action)
         official = '/' not in self.name or self.name.startswith('homebrew/')
         kind = cell(source, 8)
-        name = cell(clean(self.display_name or self.name), name_width)
+        label = clean(self.display_name or self.name)
+        alias = clean(self.search_alias)
+        suffix = ''
+        # Only show a complete token: fzf matches this field, so a clipped
+        # alias would look searchable while failing its own query.
+        if (alias and alias.casefold() != label.casefold()
+                and display_width(alias) <= name_width - display_width(label) - 3):
+            suffix = ' · ' + alias
         colored = not os.environ.get('NO_COLOR') and os.environ.get('TERM') != 'dumb'
         installed = self.current != '-'
         check = '✓' if installed else ' '
+        if suffix:
+            padding = ' ' * max(0, name_width - display_width(label + suffix))
+            if colored:
+                name = f'\033[37m{label}\033[38;5;243m{suffix}\033[0m{padding}'
+            else:
+                name = label + suffix + padding
+        else:
+            name = cell(label, name_width)
+            if colored:
+                name = f'\033[37m{name}\033[0m'
         if colored:
             color = '38;5;220' if source == 'app' else ('38;5;75' if official else '38;5;141')
             kind = f'\033[{color}m{kind}\033[0m'
-            name = f'\033[37m{name}\033[0m'
             if installed:
                 check = f'\033[38;5;78m{check}\033[0m'
         columns = [kind, name, cell(clip_cell(current, version_width), version_width, right=True) + ' ' + check]
@@ -276,7 +374,7 @@ def cached_catalog(path, brew):
         return None
 
 
-def json_inventory(queries, action, sources):
+def json_inventory(queries, action, sources, app_owners=None):
     arguments = ['outdated', '--json=v2'] if action == 'update' else ['info', '--json=v2', '--installed']
     if len(sources) == 1:
         arguments.append('--' + sources[0])
@@ -316,7 +414,12 @@ def json_inventory(queries, action, sources):
                         current = cask_installed_version(details)
                 else:
                     current = cask_installed_version(item)
-            result.append(Row(source, package_name(name), current, target))
+            name = package_name(name)
+            if source == 'cask' and app_owners is not None:
+                identity = cask_identity(queries.brew, name)
+                for path in cask_app_paths(item):
+                    app_owners.setdefault(path, set()).add(identity)
+            result.append(Row(source, name, current, target))
     return result
 
 
@@ -343,16 +446,43 @@ def native_rows(opts):
     if not getattr(opts, 'include_apps', False):
         return []
     from mactools_apps import installed_apps
-    return [Row('app', app.id, app.version or text('未知', 'Unknown'), display_name=app.name)
-            for app in installed_apps(opts.timeout)]
+    aliases = app_alias_map()
+    rows = []
+    for app in installed_apps(opts.timeout):
+        path = app_path_key(app.path)
+        rows.append(Row('app', app.id, app.version or text('未知', 'Unknown'),
+                        display_name=app.name, app_path=app.path,
+                        search_alias=aliases.get(path, '')))
+    return rows
 
 
 def rows(queries, opts):
     # Native applications appear before any slower Homebrew inventory query.
-    yield from native_rows(opts)
+    native = list(native_rows(opts))
+    yield from native
     if not opts.sources:
         return
-    installed = json_inventory(queries, opts.action, opts.sources)
+    app_owners = {}
+    installed = json_inventory(queries, opts.action, opts.sources, app_owners)
+    if native and app_owners:
+        # Prefer the native row for a Homebrew-managed app: it carries the
+        # Mole leftover selection and removes the cask registration itself.
+        # Only an exact absolute artifact target can suppress the cask row;
+        # ambiguous ownership keeps both rows and is rejected at preview.
+        present = {app_path_key(row.app_path) for row in native} - {''}
+        owned = {identity for path, identities in app_owners.items()
+                 if path in present and len(identities) == 1
+                 for identity in identities}
+        if owned:
+            installed = [row for row in installed if not
+                         (row.source == 'cask'
+                          and cask_identity(queries.brew, row.name) in owned)]
+    # Remember the token of every managed app so the next maci/macr run can
+    # keep the merged row searchable without another Homebrew inventory.
+    if opts.action != 'update' and 'cask' in opts.sources and not (opts.list or opts.dry_run):
+        save_app_alias_map({path: next(iter(identities))[1]
+                            for path, identities in app_owners.items()
+                            if len(identities) == 1})
     if opts.action != "install":
         yield from sorted(installed, key=lambda row: (row.source, row.name))
         return
@@ -387,6 +517,41 @@ def selector_cache_path(action, sources=None):
     return cache_dir() / ('selector-' + action + suffix + '.json')
 
 
+def selector_name_key(value):
+    return ''.join(char for char in str(value).casefold() if char.isalnum())
+
+
+def drop_legacy_duplicate_casks(result, action):
+    """Keep old snapshots visually clean until the live refresh replaces them.
+
+    Snapshot rows carry no artifact targets. A unique normalized app/cask name
+    pair is a display-only hint here; selection is still revalidated against
+    the live inventory before any mutation.
+    """
+    if action != 'remove':
+        return result
+    apps, casks = {}, {}
+    for row in result:
+        key = (selector_name_key(row.display_name or row.name)
+               if row.source == 'app'
+               else selector_name_key(row.name.rsplit('/', 1)[-1]))
+        if key:
+            (apps if row.source == 'app' else casks).setdefault(key, []).append(row)
+    drop = {}
+    for key, found in casks.items():
+        owners = apps.get(key, ())
+        if len(found) == 1 and len(owners) == 1:
+            drop[found[0]] = owners[0]
+    if not drop:
+        return list(result)
+    # The hidden cask token stays searchable as the app row's alias, so a
+    # legacy snapshot keeps the same query behavior as the refreshed one.
+    hints = {app.name: cask.name.rsplit('/', 1)[-1] for cask, app in drop.items()}
+    return [replace(row, search_alias=hints[row.name])
+            if row.source == 'app' and row.name in hints and not row.search_alias else row
+            for row in result if row not in drop]
+
+
 def cached_selector(queries, opts):
     paths = dict.fromkeys([selector_cache_path(opts.action, opts.sources), selector_cache_path(opts.action)])
     for path in paths:
@@ -407,8 +572,12 @@ def cached_selector(queries, opts):
                     row = Row.parse(entry['row'])
                     if row.source != 'app' or row.line() != entry['row']:
                         raise ValueError('Invalid cached application')
+                    alias = entry.get('alias', '')
+                    if not isinstance(alias, str) or (alias and not NAME.fullmatch(alias)):
+                        raise ValueError('Invalid cached application alias')
                     result.append(Row(row.source, row.name, row.current, row.target,
-                                      clean(entry['display_name'])))
+                                      display_name=clean(entry['display_name']),
+                                      search_alias=alias))
             for line in payload['rows']:
                 row = Row.parse(line)
                 if row.source not in sources or row.line() != line:
@@ -417,25 +586,207 @@ def cached_selector(queries, opts):
                     raise ValueError('Invalid cached installation state')
                 if row.source in opts.sources:
                     result.append(row)
-            return result
+            return drop_legacy_duplicate_casks(result, opts.action)
         except (OSError, ValueError, TypeError, KeyError, AttributeError):
             continue
     return None
+
+
+def save_selector_payload(path, payload):
+    """Write selector snapshots compactly; these files are read on every start."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    atomic_write(path, json.dumps(payload, ensure_ascii=False,
+                                  separators=(',', ':')).encode())
+
+
+def app_selector_entry(row):
+    entry = {'row': row.line(), 'display_name': row.display_name}
+    if row.search_alias:
+        entry['alias'] = row.search_alias
+    return entry
 
 
 def save_selector(queries, opts, result):
     if opts.list or opts.dry_run or queries.cancelled:
         return
     try:
-        save_json(selector_cache_path(opts.action, opts.sources), {
+        aliases = (app_alias_map()
+                   if 'cask' in opts.sources and opts.action != 'update' else None)
+        apps = []
+        for row in result:
+            if row.source != 'app':
+                continue
+            if aliases is not None and row.app_path:
+                row = replace(row, search_alias=aliases.get(app_path_key(row.app_path), ''))
+            apps.append(app_selector_entry(row))
+        save_selector_payload(selector_cache_path(opts.action, opts.sources), {
             'brew': queries.brew, 'sources': opts.sources, 'time': time.time(),
             'rows': [row.line() for row in result if row.source != 'app'],
-            'apps': [{'row': row.line(), 'display_name': row.display_name}
-                     for row in result if row.source == 'app'],
+            'apps': apps,
         })
     except OSError:
         # A cache is optional; read-only Homebrew operations still work without it.
         pass
+
+
+def invalidate_selector_cache():
+    """Drop cached selector rows that cannot be patched safely."""
+    for path in cache_dir().glob('selector-*.json'):
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
+SELECTOR_NAME = re.compile(r'^selector-(install|remove|update)(?:-[a-z-]+)?\.json$')
+
+
+def selector_cache_action(path):
+    match = SELECTOR_NAME.fullmatch(path.name)
+    return match.group(1) if match else None
+
+
+def installed_selection_versions(queries, selected):
+    """Read only the versions of packages just installed, never a full inventory."""
+    wanted = {}
+    for row in selected:
+        if row.source in ('formula', 'cask'):
+            wanted.setdefault(row.source, []).append(row.name)
+    result = {}
+    for source, flag in (('formula', '--formula'), ('cask', '--cask')):
+        names = wanted.get(source)
+        if not names:
+            continue
+        output = queries.capture('list', '--versions', flag, *names)
+        parsed = {}
+        for line in output.splitlines():
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            version = clean(parts[-1])
+            parsed[parts[0]] = version
+            parsed[parts[0].rsplit('/', 1)[-1]] = version
+        for name in names:
+            version = parsed.get(name) or parsed.get(name.rsplit('/', 1)[-1])
+            if not version:
+                raise ValueError(text('无法确认安装后的版本', 'Could not confirm the installed version'))
+            result[(source, name)] = version
+    return result
+
+
+def patch_selector_cache(queries, action, selected, removed_casks=()):
+    """Patch selector snapshots in place after a confirmed mutation.
+
+    Rebuilding a selector is dominated by Homebrew inventory and catalog
+    queries, so the next maci/macr run should keep reading its snapshot. Only
+    rows touched by this mutation change; unrelated rows and the original
+    snapshot time stay intact. A cache that cannot be patched is dropped so the
+    next run falls back to a live read instead of showing stale state.
+    """
+    paths = [path for path in cache_dir().glob('selector-*.json')
+             if selector_cache_action(path)]
+    if not paths:
+        return
+
+    now = time.time()
+    brew_keys = {}
+    cask_keys = {}
+    app_keys = set()
+    for row in selected:
+        if row.source == 'app':
+            app_keys.add(row.name)
+        elif row.source == 'cask':
+            cask_keys[cask_identity(queries.brew, row.name)] = row
+        else:
+            brew_keys[(row.source, row.name)] = row
+    removed_cask_ids = {cask_identity(brew, token) for brew, token in removed_casks}
+    versions = None
+
+    for path in paths:
+        cache_action = selector_cache_action(path)
+        try:
+            payload = json.loads(path.read_text())
+            if not isinstance(payload, dict):
+                raise ValueError('Invalid selector cache')
+            if payload.get('brew') != queries.brew:
+                continue
+            stamp = payload.get('time')
+            if (not isinstance(stamp, (int, float)) or not math.isfinite(stamp)
+                    or not 0 <= now - stamp < SELECTOR_CACHE_SECONDS):
+                # An expired snapshot is rebuilt live on the next start anyway.
+                continue
+            rows, apps, sources = payload.get('rows'), payload.get('apps', []), payload.get('sources')
+            if (not isinstance(rows, list) or not isinstance(apps, list)
+                    or not isinstance(sources, list)):
+                raise ValueError('Invalid selector cache')
+            if action == 'install' and versions is None:
+                # One short local query, never a full inventory scan.
+                versions = installed_selection_versions(queries, selected)
+            changed = False
+            updated_rows = []
+            present = set()
+            for line in rows:
+                row = Row.parse(line)
+                if row.line() != line:
+                    raise ValueError('Invalid selector cache row')
+                found = (cask_keys.get(cask_identity(queries.brew, row.name))
+                         if row.source == 'cask' else brew_keys.get((row.source, row.name)))
+                removed = action == 'remove' and found is not None
+                if (row.source == 'cask'
+                        and cask_identity(queries.brew, row.name) in removed_cask_ids):
+                    removed = True
+                if removed:
+                    changed = True
+                    if cache_action == 'install':
+                        # Installed again after removal: keep the row, clear state.
+                        row = Row(row.source, row.name, '-', row.target)
+                        updated_rows.append(row.line())
+                        present.add((row.source, row.name))
+                    # Remove/update selectors must not keep the package at all.
+                    continue
+                if found is not None:
+                    new_row = None
+                    if action == 'update' and found.target != '-':
+                        new_row = Row(row.source, row.name, found.target, row.target)
+                    elif action == 'install':
+                        version = versions.get((found.source, found.name))
+                        if version:
+                            new_row = Row(row.source, row.name, version, row.target)
+                    if new_row is not None and new_row.line() != line:
+                        row, changed = new_row, True
+                updated_rows.append(row.line())
+                present.add((row.source, row.name))
+            if action == 'install' and cache_action == 'remove':
+                # The remove selector must also know about packages installed now.
+                for key, version in versions.items():
+                    if key in present or key[0] not in sources:
+                        continue
+                    updated_rows.append(Row(key[0], key[1], version, '-').line())
+                    changed = True
+            updated_apps = []
+            for entry in apps:
+                if (not isinstance(entry, dict) or not isinstance(entry.get('row'), str)
+                        or not isinstance(entry.get('display_name'), str)):
+                    raise ValueError('Invalid selector cache application')
+                row = Row.parse(entry['row'])
+                if row.source != 'app' or row.line() != entry['row']:
+                    raise ValueError('Invalid selector cache application')
+                if action == 'remove' and row.name in app_keys:
+                    changed = True
+                    continue
+                updated_apps.append(entry)
+            if not changed:
+                continue
+            payload['rows'] = updated_rows
+            if 'apps' in payload:
+                payload['apps'] = updated_apps
+            save_selector_payload(path, payload)
+        except (OSError, ValueError, TypeError, KeyError, AttributeError, BrewError):
+            try:
+                path.unlink()
+            except OSError:
+                pass
 
 
 def wait_snapshot(path, timeout):
@@ -628,6 +979,9 @@ def parser():
     result.add_argument("--cask", action="store_true", help=text("选择 cask", "Select casks"))
     result.add_argument("--apps", action="store_true", help=text("仅 remove：只列本机应用及其残留，可与 --cask 组合", "remove only: native applications; combine with --cask if needed"))
     result.add_argument("--app-data", action="store_true", help=text("仅 remove：同时移除应用个人数据，预览后确认", "remove only: include personal app data after preview and confirmation"))
+    leftovers = result.add_mutually_exclusive_group()
+    leftovers.add_argument("--clean-leftovers", action="store_true", help=text("仅 remove：确认后同时清理预览中的残留", "remove only: clean previewed leftovers after confirmation"))
+    leftovers.add_argument("--keep-leftovers", action="store_true", help=text("仅 remove：只卸载应用，保留预览中的残留", "remove only: uninstall apps and keep previewed leftovers"))
     result.add_argument("--exact", "-e", action="store_true", help=text("按名称精确匹配（子串）", "Exact name matching (substring)"))
     result.add_argument("--refresh", "-r", action="store_true", help=text("重新查询目录；不会运行 brew update", "Reload names; does not run brew update"))
     result.add_argument("--refresh-index", action="store_true", help=text("仅 update：明确执行 brew update", "update only: explicitly run brew update"))
@@ -652,6 +1006,12 @@ def main(argv):
         raise ValueError(text("--refresh-index 仅用于 update，不能与 --list 或 --dry-run 组合", "--refresh-index requires update and cannot be combined with --list or --dry-run"))
     if (opts.apps or opts.app_data) and opts.action != 'remove':
         raise ValueError(text('--apps 和 --app-data 仅用于 remove', '--apps and --app-data require remove'))
+    if (opts.clean_leftovers or opts.keep_leftovers) and opts.action != 'remove':
+        raise ValueError(text('--clean-leftovers 和 --keep-leftovers 仅用于 remove',
+                              '--clean-leftovers and --keep-leftovers require remove'))
+    if opts.app_data and opts.keep_leftovers:
+        raise ValueError(text('--app-data 与 --keep-leftovers 不能同时使用',
+                              '--app-data cannot be combined with --keep-leftovers'))
     explicit_sources = [source for source, enabled in (("formula", opts.formula), ("cask", opts.cask)) if enabled]
     opts.include_apps = opts.action == 'remove' and (opts.apps or not explicit_sources)
     if opts.app_data and not opts.include_apps:
@@ -675,6 +1035,7 @@ def main(argv):
             code = subprocess.run([brew, "update"], env=queries.env).returncode
             if code:
                 return code
+            invalidate_selector_cache()
         if opts.list:
             query = " ".join(opts.query)
             for row in rows(queries, opts):
@@ -701,6 +1062,8 @@ def cask_identity(brew, token):
 def execute_selection(brew, queries, opts, selected):
     native = [row for row in selected if row.source == 'app']
     app_plan = None
+    mutated = False
+    patched = False
     try:
         if native:
             from mactools_apps import AppUninstallPlan, resolve_apps
@@ -716,25 +1079,74 @@ def execute_selection(brew, queries, opts, selected):
         commands = plan(brew, opts.action, remaining)
         if not commands and app_plan is None:
             return 0
+        clean_leftovers = True
+        if app_plan:
+            if opts.keep_leftovers:
+                clean_leftovers = False
+            elif opts.clean_leftovers or opts.app_data:
+                clean_leftovers = True
+            elif opts.dry_run:
+                clean_leftovers = None
+            elif opts.yes:
+                # --yes skips confirmation, not the destructive data choice.
+                # Without an explicit opt-in, leaving leftovers is the safe path.
+                clean_leftovers = False
+            else:
+                clean_leftovers = confirm(text('是否同时清理预览中的残留？',
+                                               'Also clean the previewed leftovers?'), False)
         print(text('执行计划：', 'Plan:'))
         for row in selected:
             print('\t'.join((row.source, row.display_name or row.name, row.current, row.target)))
+        if app_plan:
+            if clean_leftovers is None:
+                print(text('残留：执行前选择清理或保留', 'Leftovers: choose clean or keep before execution'))
+            elif clean_leftovers:
+                print(text('残留：清理', 'Leftovers: clean'))
+            elif opts.yes and not opts.keep_leftovers:
+                print(text('残留：保留（使用 --clean-leftovers 可清理）',
+                           'Leftovers: keep (use --clean-leftovers to clean them)'))
+            else:
+                print(text('残留：保留', 'Leftovers: keep'))
         for argv in commands:
             command(argv)
-        prompt = text('卸载所选应用及预览中的残留，并执行以上计划？',
-                      'Uninstall selected apps and reviewed leftovers, and execute this plan?') if app_plan else text('执行上述计划？', 'Execute this plan?')
+        if app_plan:
+            prompt = (text('卸载所选应用并清理预览中的残留，执行以上计划？',
+                           'Uninstall selected apps and clean previewed leftovers, and execute this plan?')
+                      if clean_leftovers else
+                      text('卸载所选应用并保留预览中的残留，执行以上计划？',
+                           'Uninstall selected apps while keeping previewed leftovers, and execute this plan?'))
+        else:
+            prompt = text('执行上述计划？', 'Execute this plan?')
         if opts.dry_run or not confirm(prompt, opts.yes):
             return 0
+        mutated = True
         if app_plan:
-            code = app_plan.apply(max(600, opts.timeout))
+            code = app_plan.apply(max(600, opts.timeout), clean_leftovers=bool(clean_leftovers))
             if code:
                 return code
         for argv in commands:
             code = subprocess.run(argv, env=queries.env).returncode
             if code:
                 return code
+        patch_queries = None
+        try:
+            removed_casks = (getattr(app_plan, 'cask_identities', ())
+                             if app_plan else ())
+            # select() closes its query owner; patching needs a live one for the
+            # single local "brew list --versions" call.
+            patch_queries = Queries(brew, opts.timeout)
+            patch_selector_cache(patch_queries, opts.action, selected, removed_casks)
+            patched = True
+        except (BrewError, OSError, ValueError, TypeError, KeyError):
+            pass
+        finally:
+            if patch_queries is not None:
+                patch_queries.close()
         return 0
     finally:
+        # A partial or unpatched mutation must never leave a stale snapshot.
+        if mutated and not patched:
+            invalidate_selector_cache()
         if app_plan:
             app_plan.close()
 
