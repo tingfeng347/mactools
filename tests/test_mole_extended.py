@@ -282,6 +282,34 @@ else exit 90; fi''')
 
 @unittest.skipUnless(hasattr(os, 'tcsetpgrp'), 'requires POSIX controlling terminals')
 class EngineTerminal(unittest.TestCase):
+    def test_exited_owner_group_permission_error_preserves_exit_status(self):
+        class Completed:
+            pid = 2147483647
+            returncode = 7
+            def poll(self):
+                return self.returncode
+            def wait(self, timeout=None):
+                return self.returncode
+        with patch.object(mole.subprocess, 'Popen', return_value=Completed()), patch.object(mole.os, 'open', return_value=91), patch.object(mole.os, 'close'), patch.object(mole.os, 'tcgetpgrp', return_value=os.getpgrp()), patch.object(mole.os, 'tcsetpgrp'), patch.object(mole.os, 'killpg', side_effect=PermissionError):
+            self.assertEqual(mole.run_engine(['fixture'], {}, 1, interactive=True), 7)
+
+    def test_timeout_group_permission_error_preserves_original_timeout(self):
+        from unittest.mock import Mock
+        process = Mock(pid=2147483647)
+        process.poll.return_value = 0
+        process.wait.side_effect = [subprocess.TimeoutExpired(['fixture'], 0.05), 0, 0]
+        with patch.object(mole.subprocess, 'Popen', return_value=process), patch.object(mole.os, 'killpg', side_effect=[None, PermissionError]):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                mole.run_engine(['fixture'], {}, 0.05)
+
+    def test_live_owner_group_permission_error_is_not_ignored(self):
+        from unittest.mock import Mock
+        process = Mock(pid=2147483647)
+        process.poll.return_value = None
+        with patch.object(mole.os, 'killpg', side_effect=PermissionError):
+            with self.assertRaises(PermissionError):
+                mole._signal_engine_group(process, signal.SIGCONT)
+
     def test_child_exit_before_foreground_transfer_returns_exit_status(self):
         class Completed:
             pid = 2147483647
@@ -318,6 +346,8 @@ class EngineTerminal(unittest.TestCase):
                         os.close(tty)
                         os._exit(0 if status == 0 and restored else 2)
                     except BaseException:
+                        import traceback
+                        traceback.print_exc()
                         os._exit(3)
                 captured = b''
                 sent = False

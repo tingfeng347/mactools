@@ -85,6 +85,19 @@ def unpack_bundle(destination):
         archive.extractall(destination)
 
 
+def _signal_engine_group(process, signum):
+    try:
+        os.killpg(process.pid, signum)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        # Darwin can report EPERM for an exited, unreaped group leader. Reap
+        # before deciding it is a real permissions problem. Still signal the
+        # group above: a live descendant may remain after its leader exits.
+        if process.poll() is None:
+            raise
+
+
 def run_engine(argv, env, timeout, interactive=False):
     # A timed-out shell may have scanners and owner commands running. Terminate
     # its whole session and reap it before returning control to ma.
@@ -133,24 +146,15 @@ def run_engine(argv, env, timeout, interactive=False):
                 raise
             # A fast child can read before the foreground transfer and receive
             # SIGTTIN. Resume it only after its group owns the terminal.
-            try:
-                os.killpg(process.pid, signal.SIGCONT)
-            except ProcessLookupError:
-                pass
+            _signal_engine_group(process, signal.SIGCONT)
         return process.wait(timeout=timeout)
     except BaseException:
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        _signal_engine_group(process, signal.SIGTERM)
         try:
             process.wait(timeout=2)
         except subprocess.TimeoutExpired:
             pass
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        _signal_engine_group(process, signal.SIGKILL)
         process.wait()
         raise
     finally:
