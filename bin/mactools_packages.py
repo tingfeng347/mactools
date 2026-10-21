@@ -635,6 +635,7 @@ def parser():
     result.add_argument("--dry-run", action="store_true", help=text("选择后只打印计划，不修改软件或工具缓存", "Select and print plan without changing packages or tool cache"))
     result.add_argument("--yes", "-y", action="store_true", help=text("只跳过 mactools 确认", "Skip only mactools confirmation"))
     result.add_argument("--timeout", type=float, default=15, metavar="SECONDS", help=text("每个只读查询的超时（默认 15 秒）", "Timeout per read-only query (default: 15 seconds)"))
+    result.add_argument("--scan-timeout", type=float, default=120, metavar="SECONDS", help=text("仅 remove：每个应用残留扫描的超时（默认 120 秒）", "remove only: leftover scan timeout per app (default: 120 seconds)"))
     result.add_argument("query", nargs="*", help=text("软件名称查询", "Package name query"))
     return result
 
@@ -643,6 +644,10 @@ def main(argv):
     opts = parser().parse_intermixed_args(argv)
     if not math.isfinite(opts.timeout) or opts.timeout <= 0:
         raise ValueError("--timeout must be a positive finite number")
+    if not math.isfinite(opts.scan_timeout) or opts.scan_timeout <= 0:
+        raise ValueError("--scan-timeout must be a positive finite number")
+    if opts.scan_timeout != 120 and opts.action != 'remove':
+        raise ValueError(text('--scan-timeout 仅用于 remove', '--scan-timeout requires remove'))
     if opts.refresh_index and (opts.action != "update" or opts.list or opts.dry_run):
         raise ValueError(text("--refresh-index 仅用于 update，不能与 --list 或 --dry-run 组合", "--refresh-index requires update and cannot be combined with --list or --dry-run"))
     if (opts.apps or opts.app_data) and opts.action != 'remove':
@@ -700,7 +705,8 @@ def execute_selection(brew, queries, opts, selected):
         if native:
             from mactools_apps import AppUninstallPlan, resolve_apps
             apps = resolve_apps([row.name for row in native], opts.timeout)
-            app_plan = AppUninstallPlan(apps, opts.timeout, with_data=opts.app_data)
+            app_plan = AppUninstallPlan(apps, opts.timeout, with_data=opts.app_data,
+                                       scan_timeout=opts.scan_timeout)
             app_plan.preview()
         # Mole's app uninstaller removes the cask registration itself. If both
         # views of one app were selected, run that uninstall just once.

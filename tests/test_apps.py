@@ -4,6 +4,8 @@ The harness disables real Homebrew, process/service changes and administrator
 access; the Trash sink only renames fixtures under that temporary HOME.
 """
 import os
+import contextlib
+import io
 import json
 import plistlib
 import subprocess
@@ -89,6 +91,55 @@ class AppIdentity(unittest.TestCase):
         with patch.object(plan, '_run', return_value=0):
             plan.apply(5)
         self.assertFalse(plan.reviewed)
+
+    def test_app_scan_has_its_own_budget_beyond_brew_query_timeout(self):
+        app = apps._app(str(self.app()))
+        plan = apps.AppUninstallPlan([app], timeout=0.03)
+        self.addCleanup(plan.close)
+
+        def unpack(destination):
+            destination.mkdir()
+            (destination / 'mactools-apps.sh').write_text(
+                'sleep 0.1\nprintf "fixture\\0" > "$3"\n')
+
+        def launch(argv, env, timeout, interactive=False):
+            return subprocess.run(argv, env=env, timeout=timeout, check=True).returncode
+
+        with patch.object(apps, 'unpack_bundle', side_effect=unpack), \
+             patch.object(apps, 'run_engine', side_effect=launch):
+            plan.preview()
+        self.assertTrue(plan.reviewed)
+        self.owner_mock.assert_called_once_with([app], 0.03)
+
+    def test_scan_budget_scales_with_unique_apps_and_can_be_configured(self):
+        first = apps._app(str(self.app('First')))
+        second = apps._app(str(self.app('Second')))
+        plan = apps.AppUninstallPlan([first, second, first], scan_timeout=240)
+        self.addCleanup(plan.close)
+        self.assertEqual(plan.scan_timeout, 480)
+
+    def test_scan_timeout_cannot_authorize_uninstall_or_expose_internal_paths(self):
+        app = apps._app(str(self.app()))
+        plan = apps.AppUninstallPlan([app], scan_timeout=0.03)
+        self.addCleanup(plan.close)
+        with patch.object(apps, 'unpack_bundle'), \
+             patch.object(apps, 'run_engine', side_effect=subprocess.TimeoutExpired(['/private/internal/engine'], 0.03)):
+            with self.assertRaisesRegex(ValueError, '--scan-timeout 240') as failure:
+                plan.preview()
+        self.assertNotIn('/private/internal', str(failure.exception))
+        self.assertFalse(plan.reviewed)
+        with self.assertRaisesRegex(ValueError, 'Preview'):
+            plan.apply()
+
+    def test_focusing_app_details_never_scans_leftovers(self):
+        app = apps._app(str(self.app()))
+        with patch.object(apps, 'resolve_apps', return_value=[app]), \
+             patch.object(apps, 'AppUninstallPlan') as plan, \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            apps.preview_detail(app.id)
+        plan.assert_not_called()
+        self.assertIn(app.version, output.getvalue())
+        self.assertIn(app.path, output.getvalue())
 
 
 @unittest.skipUnless(sys.platform == 'darwin' and os.geteuid() != 0, 'Mole uses macOS tools and an unprivileged account')

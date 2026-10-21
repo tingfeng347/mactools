@@ -5,6 +5,7 @@ uninstall builds a new identity-bound plan and keeps personal data by default.
 """
 import hashlib
 import json
+import math
 import os
 import plistlib
 import re
@@ -200,7 +201,7 @@ def _cask_owners(selected, timeout):
 
 class AppUninstallPlan:
     """A private snapshot of exact app bundles and chosen Mole leftovers."""
-    def __init__(self, apps, timeout=60, with_data=False):
+    def __init__(self, apps, timeout=60, with_data=False, scan_timeout=120):
         self.apps = list({app.id: app for app in apps}.values())
         if not self.apps:
             raise ValueError('No applications selected.')
@@ -208,6 +209,11 @@ class AppUninstallPlan:
             if _app(app.path).id != app.id:
                 raise ValueError('Invalid application identity.')
         self.timeout = timeout
+        if not math.isfinite(scan_timeout) or scan_timeout <= 0:
+            raise ValueError('--scan-timeout must be a positive finite number')
+        # Leftover discovery traverses app bundles and user libraries. Its
+        # budget is independent of the short Homebrew metadata query timeout.
+        self.scan_timeout = scan_timeout * len(self.apps)
         self.with_data = bool(with_data)
         self.reviewed = False
         self.cask_names = set()
@@ -239,7 +245,17 @@ class AppUninstallPlan:
             argv += ['1' if self.with_data else '0', str(self.path / 'owners.bin')]
         else:
             argv += [str(self.path / name) for name in ('details.bin', 'approved.bin', 'owners.bin')]
-        status = run_engine(argv, _environment(), timeout or self.timeout, interactive=mode == 'apply')
+        budget = timeout if timeout is not None else self.scan_timeout
+        try:
+            status = run_engine(argv, _environment(), budget, interactive=mode == 'apply')
+        except subprocess.TimeoutExpired as error:
+            self.reviewed = False
+            if mode != 'preview':
+                raise
+            raise ValueError(text(
+                f'应用残留扫描超时（{budget:g} 秒），未执行卸载。可使用 macr --scan-timeout 240 增加每个应用的扫描时间。',
+                f'Application leftover scan timed out after {budget:g} seconds; no apps were uninstalled. '
+                'Use macr --scan-timeout 240 to allow more time per app.')) from error
         if status:
             self.reviewed = False
             raise ValueError(text(f'应用卸载{ "预览" if mode == "preview" else "执行" }未完成（状态 {status}）。',
@@ -286,8 +302,5 @@ def preview_detail(app_id, timeout=15):
     print(text('已安装：', 'Installed: ') + (app.version or '—'), flush=True)
     print(text('位置：', 'Path: ') + app.path, flush=True)
     print('Bundle ID: ' + app.bundle_id, flush=True)
-    plan = AppUninstallPlan(apps, timeout)
-    try:
-        plan.preview()
-    finally:
-        plan.close()
+    print('\n' + text('按 Enter 后扫描应用及残留，确认前显示完整计划。',
+                       'Press Enter to scan the app and leftovers, then review the full plan before confirming.'), flush=True)

@@ -111,7 +111,7 @@ def completion(shell):
         words="''' + actions + ''' --help --version"
     fi
     [[ "$action" == update ]] && words="$words --refresh-index"
-    [[ "$action" == remove ]] && words="$words --apps --app-data"
+    [[ "$action" == remove ]] && words="$words --apps --app-data --scan-timeout"
     COMPREPLY=( $(compgen -W "$words" -- "$cur") )
 }
 complete -F _mactools_complete ma maci macr macu macd macc maco macm maca''')
@@ -132,7 +132,7 @@ complete -F _mactools_complete ma maci macr macu macd macc maco macm maca''')
         candidates=(''' + actions + ''' --help --version)
     fi
     if [[ ${words[1]:t} == macu || ${words[2]} == update ]]; then candidates+=(--refresh-index); fi
-    if [[ ${words[1]:t} == macr || ( ${words[1]:t} == ma && ${words[2]} == remove ) ]]; then candidates+=(--apps --app-data); fi
+    if [[ ${words[1]:t} == macr || ( ${words[1]:t} == ma && ${words[2]} == remove ) ]]; then candidates+=(--apps --app-data --scan-timeout); fi
     compadd -- "${candidates[@]}"
 }
 compdef _mactools_complete ma maci macr macu macd macc maco macm maca''')
@@ -143,7 +143,7 @@ compdef _mactools_complete ma maci macr macu macd macc maco macm maca''')
         print("complete -c ma -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish'")
         options = {
             "install": "formula brew cask exact refresh list dry-run yes timeout help",
-            "remove": "formula brew cask apps app-data exact refresh list dry-run yes timeout help",
+            "remove": "formula brew cask apps app-data exact refresh list dry-run yes timeout scan-timeout help",
             "update": "formula brew cask exact refresh refresh-index list dry-run yes timeout help",
             "doctor": "formula brew cask offline timeout help",
             "clean": "formula brew cask dev exact list dry-run yes timeout help",

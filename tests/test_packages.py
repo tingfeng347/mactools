@@ -137,14 +137,14 @@ class PackageTests(unittest.TestCase):
                     native_plan = plan_factory.return_value
                     native_plan.cask_identities = {(str(self.brew), 'firefox')}
                     native_plan.apply.return_value = 0
-                    opts = packages.parser().parse_args(['remove', '--app-data'] + (['--dry-run'] if dry_run else []))
+                    opts = packages.parser().parse_args(['remove', '--app-data', '--scan-timeout', '240'] + (['--dry-run'] if dry_run else []))
                     queries = packages.Queries(str(self.brew), 15)
                     with contextlib.redirect_stdout(io.StringIO()):
                         status = packages.execute_selection(str(self.brew), queries, opts,
                             [app, packages.Row('cask', 'homebrew/cask/firefox', '120')])
                     self.assertEqual(status, 0)
                     resolve.assert_called_once_with([app.name], 15)
-                    plan_factory.assert_called_once_with(['resolved'], 15, with_data=True)
+                    plan_factory.assert_called_once_with(['resolved'], 15, with_data=True, scan_timeout=240)
                     native_plan.preview.assert_called_once_with()
                     native_plan.close.assert_called_once_with()
                     self.assertEqual(native_plan.apply.called, not dry_run and accepted)
@@ -839,6 +839,10 @@ for row in rows:
         for value in ("nan", "inf", "0", "-1"):
             with self.assertRaises(ValueError):
                 self.invoke("remove", "--list", "--timeout", value)
+            with self.assertRaises(ValueError):
+                self.invoke("remove", "--list", "--scan-timeout", value)
+        with self.assertRaises(ValueError):
+            self.invoke("install", "--list", "--scan-timeout", "240")
         for name in ("--zap", "../user", "hello\nworld", "$(touch /tmp/unsafe)"):
             with self.assertRaises(ValueError):
                 packages.package_name(name)
