@@ -1,12 +1,16 @@
-<h1 align="center">🍎 mactools</h1>
+<p align="center">
+  <img src="docs/images/logo.svg" width="96" height="96" alt="mactools logo">
+</p>
+
+<h1 align="center">mactools</h1>
 
 <p align="center">
-  <strong>A macOS terminal toolkit — packages, cleanup, mirrors, and AI coding tools</strong>
+  <strong>A macOS terminal toolkit — packages, app removal, cleanup, and system optimization</strong>
 </p>
 
 <p align="center">
   <a href="https://github.com/tingfeng347/mactools/actions/workflows/ci.yml"><img src="https://github.com/tingfeng347/mactools/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
-  <a href="https://github.com/tingfeng347/mactools"><img src="https://img.shields.io/badge/macOS-Intel%20%7C%20Apple%20Silicon-111827?logo=apple&amp;logoColor=white" alt="macOS: Intel and Apple Silicon"></a>
+  <a href="https://github.com/tingfeng347/mactools"><img src="https://img.shields.io/badge/macOS-Intel%20%7C%20Apple%20Silicon-111827" alt="macOS: Intel and Apple Silicon"></a>
   <a href="https://brew.sh/"><img src="https://img.shields.io/badge/Homebrew-supported-FBB040?logo=homebrew&amp;logoColor=white" alt="Homebrew supported"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&amp;logoColor=white" alt="Python 3.9+"></a>
   <a href="https://www.gnu.org/software/bash/"><img src="https://img.shields.io/badge/Bash-3.2%2B-4EAA25?logo=gnubash&amp;logoColor=white" alt="Bash 3.2+"></a>
@@ -16,12 +20,14 @@
   <a href="README.md">简体中文</a> · <strong>English</strong>
 </p>
 
-Ported from [ubtools](https://github.com/tingfeng347/ubtools). Use `ma + action` and shortcuts such as `maci` to manage Homebrew Formulae and Casks, environment diagnostics, mirrors, and AI coding tools.
+Ported from [ubtools](https://github.com/tingfeng347/ubtools). Use `ma + action` and shortcuts such as `maci` to manage Homebrew Formulae and Casks, native apps and leftovers, disk cleanup, system optimization, mirrors, and AI coding tools. Cleanup, app removal, and optimization reuse the open-source [Mole](https://github.com/tw93/Mole) implementation, with a preview before confirmation.
 
 ```bash
 ma install firefox
 maci firefox                 # Same as ma install
-ma update --list
+macr                         # Remove apps and leftovers
+macc                         # Clean up disk space
+maco                         # Optimize the system
 ma ai install --all --dry-run
 ```
 
@@ -29,13 +35,33 @@ Supports Intel and Apple Silicon, works with macOS system Bash 3.2, and uses the
 
 ## Interface demo
 
-Search, selection, and package details: Blue marks official Homebrew sources; purple marks third-party taps. Types use `formula` / `cask` (`app` for native applications); names are white, with a green `✓` beside installed versions. The name heading is centered, package names are left aligned, and versions are right aligned. Use `Tab` to select multiple packages and `Ctrl+/` to toggle details.
+Search and select packages: white names, right-aligned versions, and green `✓` marks for installed packages. Blue types indicate official Homebrew sources; purple indicates third-party taps. Use `Tab` for multiple selections, `Ctrl+A` to select all matches, and `Ctrl+/` to toggle details.
 
-![maci searching for Firefox with Homebrew package details on the right](docs/images/install-status.png)
+![maci searching for fish with installed versions and package details](docs/images/install-status.png)
 
-Commands and shortcuts:
+<details>
+<summary>More interfaces: app removal, disk cleanup, and system optimization</summary>
 
-![ma help showing features and their shortcuts](docs/images/commands-color.png)
+**App removal with `macr`**: native apps appear first with yellow `app` labels. Press Enter to scan leftovers before confirming removal.
+
+![macr searching for CC Switch with native app and Homebrew cask entries](docs/images/remove-color.png)
+
+**Disk cleanup with `macc`**: select Homebrew caches, unused dependencies, build output, and application caches; inspect the scope on the right.
+
+![macc cleanup selector showing action names, scopes, and details](docs/images/clean-color.png)
+
+**System optimization with `maco`**: choose from 19 tasks for DNS, system caches, and services, then review permissions and effects.
+
+![maco optimization selector showing tasks and required permissions](docs/images/optimize-color.png)
+
+</details>
+
+<details>
+<summary>All commands and shortcuts</summary>
+
+![Colorful ma help showing features and shortcuts](docs/images/commands-color.png)
+
+</details>
 
 ## Install and uninstall
 
@@ -139,7 +165,6 @@ maci --exact wget            # Contiguous substring matching; fuzzy by default
 maci --list firefox          # List matches without opening the selector
 maci --refresh               # Fetch the name catalog again
 
-macr                        # Select multiple installed packages
 macr                        # Native apps first, then Homebrew packages
 macr --apps                 # Native applications and leftovers only
 macr --apps --app-data       # Include personal data in the reviewed plan
@@ -157,11 +182,12 @@ Install, remove, and update operations display a plan and request confirmation. 
 
 The install selector shows package source, name, and installed version, with Homebrew details in the preview. The update selector shows installed and target versions. Search matches only names, excluding source, version, and installation status.
 
-Keyboard hints and column headings appear on separate lines. Chinese mode distinguishes command-line tools and applications with localized labels. Wide terminals show details on the right; narrower terminals place them below. Preview labels follow the interface language, while package names and upstream descriptions retain their original text.
+Keyboard hints and column headings appear on separate lines. Types use `formula` / `cask` for Homebrew packages and `app` for native applications in both languages. Wide terminals show details on the right; narrower terminals place them below. Preview labels follow the interface language, while package names and upstream descriptions retain their original text.
 
 | Key | Action |
 |---|---|
 | `Tab` / `Shift+Tab` | Toggle selection and move down / up |
+| `Ctrl+A` | Select all current matches |
 | `Enter` | Continue to the operation plan and confirmation |
 | `Ctrl+R` | Refresh the current list |
 | `Ctrl+E` | Switch between contiguous substring and fuzzy matching |
@@ -172,7 +198,7 @@ Keyboard hints and column headings appear on separate lines. Chinese mode distin
 
 `maci`, `macu` and `macr` first show a list snapshot from the last 24 hours, then refresh it in the background without restarting the selector. First use still loads live data. Search and selection remain available during refresh; recent fzf versions retain selected packages. Pressing Enter early waits for the refresh to verify the selection. Removed packages and updates no longer needed are skipped; cached state never authorizes a package change. Single-type `--formula` / `--cask` selectors can reuse a combined snapshot, and live queries request only the required type. Switching details cancels the old preview query to avoid accumulating background work. Name catalogs are cached for one hour; `Ctrl+R` forces a catalog refresh. Cache defaults to `~/Library/Caches/mactools` and respects `XDG_CACHE_HOME`. `--list` always uses live state. `--list` and `--dry-run` neither write mactools cache nor change packages.
 
-Package queries time out after 15 seconds per request by default; adjust with `--timeout 30`. Only an explicit `ma update --refresh-index` refreshes the Homebrew index. It cannot be combined with `--list` or `--dry-run`.
+Package queries time out after 15 seconds per request by default; adjust with `--timeout 30`. App details show metadata immediately; leftover discovery starts after Enter, with a separate 120-second budget per app, added together for multiple selections. Adjust it with `macr --scan-timeout 240`. A timed-out scan cancels the plan without uninstalling anything. Only an explicit `ma update --refresh-index` refreshes the Homebrew index. It cannot be combined with `--list` or `--dry-run`.
 
 Installed Cask versions prefer the application's own version, falling back to the Homebrew installation record when unavailable. Details separate the installed version, Homebrew record, Homebrew available version and tap. After an app updates itself, `macu` skips Homebrew versions confidently identified as equal or older. Build-qualified versions also check build numbers; formats that cannot be compared reliably retain Homebrew's update decision. Homebrew availability may lag behind the app's own updater.
 

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">mactools</title>
+  <desc id="desc">An angular blue M and a cyan terminal cursor on a navy tile.</desc>
+  <rect x="4" y="4" width="248" height="248" rx="52" fill="#142437"/>
+  <path d="M57 171V85L108 137L159 85V171" fill="none" stroke="#66B5FF" stroke-width="17" stroke-linejoin="round"/>
+  <path d="M184 171H212" fill="none" stroke="#62DEC3" stroke-width="17"/>
+</svg>

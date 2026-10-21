@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
-"""Render recorded terminal sessions for README screenshots on macOS.
+"""Render README terminal demos on macOS (development deps: pillow, pyte).
 
-Optional development dependencies: pip install pillow pyte
-Record in a 160-column, 32-row terminal from the repository root:
-    stty cols 160 rows 32
-    env -u NO_COLOR TERM=xterm-256color script -q .reference/help.typescript ./bin/ma --help
-    env -u NO_COLOR TERM=xterm-256color script -q .reference/install.typescript ./bin/maci --dry-run --formula --exact fish
-    env -u NO_COLOR TERM=xterm-256color script -q .reference/ai.typescript ./bin/maca install --dry-run
-Exit each selector with ESC after the preview loads. Then run:
-    python scripts/capture_demo.py
+Use --capture to open each current selector in a private pseudo-terminal and
+exit with Escape. No selections are accepted and no actions are executed.
+Without --capture, render existing .reference/*.typescript recordings.
 """
 
+import argparse
+import os
 from pathlib import Path
 import unicodedata
 
@@ -20,6 +17,13 @@ import pyte
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / 'docs' / 'images'
 COLS, ROWS = 160, 35
+DEMOS = (
+    ('install', 'install-status.png', ['maci', '--dry-run', '--formula', '--exact', 'fish'], 'maci fish'),
+    ('remove', 'remove-color.png', ['macr', '--dry-run', '--exact', 'switch'], 'macr switch'),
+    ('clean', 'clean-color.png', ['macc', '--dry-run'], 'ma clean'),
+    ('optimize', 'optimize-color.png', ['maco'], 'ma optimize'),
+    ('ai', 'ai-color.png', ['maca', 'install', '--dry-run'], 'ma ai'),
+)
 COLORS = {
     'default': '#d6deeb', 'black': '#10151d', 'red': '#ef7382',
     'green': '#a7cf90', 'brown': '#e3c885', 'blue': '#87bdf4',
@@ -80,11 +84,76 @@ def render(screen, filename, command):
     image.save(OUTPUT / filename, optimize=True)
 
 
+def capture(arguments, seconds=8):
+    # Terminal-only dependencies stay out of the recording renderer.
+    import fcntl
+    import pty
+    import select
+    import signal
+    import struct
+    import termios
+    import time
+
+    child, fd = pty.fork()
+    if child == 0:
+        fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack('HHHH', ROWS, COLS, 0, 0))
+        env = dict(os.environ, TERM='xterm-256color', MACTOOLS_LANG='zh', NO_COLOR='')
+        executable = str(ROOT / 'bin' / arguments[0])
+        os.execve(executable, [executable, *arguments[1:]], env)
+    data = bytearray()
+    finished = False
+    try:
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if select.select([fd], [], [], 0.2)[0]:
+                try:
+                    chunk = os.read(fd, 65536)
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                data.extend(chunk)
+                if b'\x1b[6n' in chunk:
+                    os.write(fd, b'\x1b[1;1R')
+        # Capture the live frame BEFORE Escape triggers fzf screen cleanup.
+        finished = bool(os.waitpid(child, os.WNOHANG)[0])
+        if not finished:
+            os.write(fd, b'\x1b')
+        deadline = time.monotonic() + 3
+        while not finished and time.monotonic() < deadline:
+            if select.select([fd], [], [], 0.1)[0]:
+                try:
+                    os.read(fd, 65536)
+                except OSError:
+                    pass
+            if os.waitpid(child, os.WNOHANG)[0]:
+                finished = True
+                break
+    finally:
+        if not finished:
+            try:
+                os.killpg(child, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            os.waitpid(child, 0)
+        os.close(fd)
+    return bytes(data)
+
+
 if __name__ == '__main__':
-    render(recording(ROOT / '.reference' / 'help.typescript'), 'commands-color.png', 'ma --help')
-    render(recording(ROOT / '.reference' / 'install.typescript', interactive=True),
-           'install-status.png', 'maci --formula --exact fish  # dry-run demo')
-    if (ROOT / '.reference' / 'ai.typescript').exists():
-        render(recording(ROOT / '.reference' / 'ai.typescript', interactive=True),
-               'ai-color.png', 'ma ai')
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--capture', action='store_true')
+    args = parser.parse_args()
+    recordings = ROOT / '.reference'
+    if args.capture:
+        recordings.mkdir(exist_ok=True)
+        (recordings / 'help.typescript').write_bytes(capture(['ma', '--help'], seconds=1))
+        for name, filename, arguments, title in DEMOS:
+            (recordings / (name + '.typescript')).write_bytes(capture(arguments))
+            print('Captured ' + title, flush=True)
+    render(recording(recordings / 'help.typescript'), 'commands-color.png', 'ma --help')
+    for name, filename, arguments, title in DEMOS:
+        path = recordings / (name + '.typescript')
+        if path.exists():
+            render(recording(path, interactive=not args.capture), filename, title)
     print('Saved terminal screenshots in docs/images/')

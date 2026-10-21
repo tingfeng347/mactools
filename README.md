@@ -1,12 +1,16 @@
-<h1 align="center">🍎 mactools</h1>
+<p align="center">
+  <img src="docs/images/logo.svg" width="96" height="96" alt="mactools logo">
+</p>
+
+<h1 align="center">mactools</h1>
 
 <p align="center">
-  <strong>macOS 终端工具集 — 搜索安装、更新清理、镜像测速与 AI 编程工具管理</strong>
+  <strong>macOS 终端工具集 — 软件管理、应用卸载、空间清理与系统优化</strong>
 </p>
 
 <p align="center">
   <a href="https://github.com/tingfeng347/mactools/actions/workflows/ci.yml"><img src="https://github.com/tingfeng347/mactools/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
-  <a href="https://github.com/tingfeng347/mactools"><img src="https://img.shields.io/badge/macOS-Intel%20%7C%20Apple%20Silicon-111827?logo=apple&amp;logoColor=white" alt="macOS: Intel and Apple Silicon"></a>
+  <a href="https://github.com/tingfeng347/mactools"><img src="https://img.shields.io/badge/macOS-Intel%20%7C%20Apple%20Silicon-111827" alt="macOS: Intel and Apple Silicon"></a>
   <a href="https://brew.sh/"><img src="https://img.shields.io/badge/Homebrew-supported-FBB040?logo=homebrew&amp;logoColor=white" alt="Homebrew supported"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&amp;logoColor=white" alt="Python 3.9+"></a>
   <a href="https://www.gnu.org/software/bash/"><img src="https://img.shields.io/badge/Bash-3.2%2B-4EAA25?logo=gnubash&amp;logoColor=white" alt="Bash 3.2+"></a>
@@ -16,12 +20,14 @@
   <strong>简体中文</strong> · <a href="README.en.md">English</a>
 </p>
 
-移植自 [ubtools](https://github.com/tingfeng347/ubtools)，使用 `ma + 动作` 和 `maci` 等快捷命令，统一管理 Homebrew Formula / Cask、环境诊断、镜像源和 AI 编程工具。
+移植自 [ubtools](https://github.com/tingfeng347/ubtools)，使用 `ma + 动作` 和 `maci` 等快捷命令，统一管理 Homebrew Formula / Cask、本机应用与残留、空间清理、系统优化、镜像源和 AI 编程工具。清理、应用卸载与优化复用 [Mole](https://github.com/tw93/Mole) 的开源实现，先预览，再确认执行。
 
 ```bash
 ma install firefox
 maci firefox                 # 与 ma install 相同
-ma update --list
+macr                         # 应用及残留卸载
+macc                         # 空间清理
+maco                         # 系统优化
 ma ai install --all --dry-run
 ```
 
@@ -29,13 +35,33 @@ ma ai install --all --dry-run
 
 ## 界面演示
 
-搜索、选择与软件详情：蓝色标识为 Homebrew 官方源，紫色标识为第三方 tap；类型显示 `formula` / `cask`；名称为白色，已安装版本右侧显示绿色 `✓`。名称表头居中、软件名左对齐、版本靠右，`Tab` 多选，`Ctrl+/` 收起或展开详情。
+搜索与多选安装：白色软件名、右对齐版本，绿色 `✓` 标记已安装。蓝色类型表示 Homebrew 官方源，紫色表示第三方 tap。`Tab` 多选，`Ctrl+A` 全选，`Ctrl+/` 展开详情。
 
-![maci 搜索 Firefox，并在右侧预览 Homebrew 软件详情](docs/images/install-status.png)
+![maci 搜索 fish，显示已安装版本和软件详情](docs/images/install-status.png)
 
-完整命令和快捷入口：
+<details>
+<summary>更多界面：应用卸载、空间清理与系统优化</summary>
 
-![ma 帮助界面，展示功能及对应缩写](docs/images/commands-color.png)
+**应用卸载 `macr`**：本机应用使用黄色 `app` 标识并置顶；按 Enter 后扫描残留，再确认卸载。
+
+![macr 搜索 CC Switch，展示本机应用与 Homebrew cask](docs/images/remove-color.png)
+
+**空间清理 `macc`**：选择 Homebrew 缓存、无用依赖、构建产物与应用缓存，右侧查看影响范围。
+
+![macc 多选清理界面，展示名称、范围和详情](docs/images/clean-color.png)
+
+**系统优化 `maco`**：选择 DNS、系统缓存与服务等 19 项任务，预览权限与影响后执行。
+
+![maco 系统优化界面，展示任务与所需权限](docs/images/optimize-color.png)
+
+</details>
+
+<details>
+<summary>完整命令和快捷入口</summary>
+
+![ma 彩色帮助界面，展示功能及对应缩写](docs/images/commands-color.png)
+
+</details>
 
 ## 安装与卸载
 
@@ -139,7 +165,6 @@ maci --exact wget            # 连续子串匹配；默认 fzf 模糊匹配
 maci --list firefox          # 只列出匹配项，不进入交互
 maci --refresh               # 重新获取名称目录
 
-macr                        # 多选已安装软件
 macr                        # 本机应用排在前面，随后是 Homebrew 软件
 macr --apps                 # 只选择本机应用及残留
 macr --apps --app-data       # 同时预览个人数据，确认后卸载
@@ -162,6 +187,7 @@ macu --refresh-index        # 先确认并执行 brew update，再查看更新
 | 按键 | 操作 |
 |---|---|
 | `Tab` / `Shift+Tab` | 多选 / 反向多选 |
+| `Ctrl+A` | 全选当前匹配项 |
 | `Enter` | 进入操作计划与确认 |
 | `Ctrl+R` | 刷新当前列表 |
 | `Ctrl+E` | 切换连续子串 / 模糊匹配 |
@@ -172,7 +198,7 @@ macu --refresh-index        # 先确认并执行 brew update，再查看更新
 
 `maci`、`macu`、`macr` 优先显示最近 24 小时内的列表快照，后台重新查询并动态替换列表；首次使用仍需加载数据。刷新期间可以继续搜索和多选，新版 fzf 会保留已选软件。提前按 Enter 时会等待后台核对完成，已卸载或不再需要更新的软件会跳过；缓存不会直接决定包变更。单独筛选 `--formula` / `--cask` 时也可复用完整列表缓存，实时查询只读取所需类型。切换详情会停止旧的预览查询，避免后台查询积压。名称目录缓存一小时，`Ctrl+R` 会强制刷新目录。缓存默认在 `~/Library/Caches/mactools`，遵循 `XDG_CACHE_HOME`。`--list` 始终读取实时状态，`--list` 与 `--dry-run` 不写工具缓存，也不执行包变更。
 
-包查询默认每项超时 15 秒，可用 `--timeout 30` 调整。仅显式 `ma update --refresh-index` 会刷新 Homebrew 索引；它不能与 `--list` / `--dry-run` 组合。
+包查询默认每项超时 15 秒，可用 `--timeout 30` 调整。应用详情只读取基本信息；按 Enter 后才扫描残留，默认每个应用最多 120 秒，多选时累加，可用 `macr --scan-timeout 240` 调整。扫描超时会取消计划，不执行卸载。仅显式 `ma update --refresh-index` 会刷新 Homebrew 索引；它不能与 `--list` / `--dry-run` 组合。
 
 Cask 的已安装版本优先采用应用自身的版本，无法读取时回退到 Homebrew 安装记录。详情分别列出当前版本、Homebrew 安装记录、Homebrew 可用版本和 tap 来源。应用自更新后，`macu` 会跳过能明确判定为相同或较旧的 Homebrew 版本；带构建号时也会核对构建号，无法可靠比较的格式继续沿用 Homebrew 的更新判断。这里的可用版本属于 Homebrew 渠道，可能落后于应用内更新。
 
