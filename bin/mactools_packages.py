@@ -177,18 +177,30 @@ class Queries:
             except ProcessLookupError:
                 pass
             return
+        def signal_group(sig):
+            # Darwin reports EPERM for groups containing only unreaped exited
+            # processes. Reap our child first, but still signal the group: a
+            # finished brew wrapper can leave live children holding its pipes.
+            process.poll()
+            try:
+                os.killpg(process.pid, sig)
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                # The child can exit between poll() and killpg(). Do not hide
+                # a genuine permission error while our query is still alive.
+                if process.poll() is None:
+                    raise
+
         try:
-            os.killpg(process.pid, signal.SIGTERM)
+            signal_group(signal.SIGTERM)
             process.wait(timeout=0.3)
         except (subprocess.TimeoutExpired, ProcessLookupError):
             pass
         finally:
             # A wrapper may exit before children that still hold stdout/stderr.
             # Kill the remaining group before communicate() drains those pipes.
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            signal_group(signal.SIGKILL)
 
     def close(self):
         with self.lock:

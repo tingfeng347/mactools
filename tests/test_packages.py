@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bin"))
 import mactools_packages as packages
@@ -370,6 +370,54 @@ for row in rows:
             opts.sources = [source]
             with self.subTest(source=source):
                 self.assertEqual(packages.cached_selector(queries, opts), [r for r in result if r.source == source])
+
+    def test_cancel_finished_query_reaps_before_signalling_its_group(self):
+        process = subprocess.Popen([sys.executable, '-c', 'pass'],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+        try:
+            process.stdout.read()
+            process.stderr.read()
+            # Leave the exited child unreaped, as happens when fzf cancellation
+            # races the inventory worker. Darwin rejects killpg on this group.
+            time.sleep(0.1)
+            self.assertIsNone(process.returncode)
+            packages.Queries.stop(process)
+            self.assertEqual(process.poll(), 0)
+        finally:
+            process.communicate(timeout=2)
+
+    def test_cancel_query_handles_exit_between_poll_and_group_signal(self):
+        process = Mock(pid=12345, _mactools_detached=True)
+        process.poll.side_effect = [None, 0, 0, 0]
+        with patch.object(packages.os, 'killpg', side_effect=PermissionError):
+            packages.Queries.stop(process)
+        process.poll.assert_called()
+
+    def test_cancel_live_query_preserves_permission_errors(self):
+        process = Mock(pid=12345, _mactools_detached=True)
+        process.poll.return_value = None
+        with patch.object(packages.os, 'killpg', side_effect=PermissionError):
+            with self.assertRaises(PermissionError):
+                packages.Queries.stop(process)
+
+    def test_cancel_finished_wrapper_still_kills_its_children(self):
+        code = ('import subprocess,sys; '
+                'subprocess.Popen([sys.executable,"-c",'
+                '"import signal,time;signal.signal(signal.SIGTERM,signal.SIG_IGN);'
+                'print(\\\"ready\\\",flush=True);time.sleep(10)"])')
+        process = subprocess.Popen([sys.executable, '-c', code],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+        try:
+            self.assertEqual(process.stdout.readline().strip(), 'ready')
+            process.wait(timeout=2)
+            packages.Queries.stop(process)
+            process.communicate(timeout=2)
+        finally:
+            try:
+                os.killpg(process.pid, packages.signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            process.communicate(timeout=2)
 
     def test_terminated_preview_reaps_its_brew_query(self):
         import signal
