@@ -35,20 +35,22 @@ ma ai install --all --dry-run
 
 ## 安装与卸载
 
-Homebrew：
+Homebrew 安装/卸载：
 
 ```bash
 brew install tingfeng347/tap/mactools
 brew uninstall mactools
 ```
 
-脚本安装（部署到 `~/.local/bin`，不需要 sudo）：
+脚本安装/卸载（部署到 `~/.local/bin`，不需要 sudo）：
 
 ```bash
 git clone https://github.com/tingfeng347/mactools.git
 cd mactools && bash install.sh
 bash uninstall.sh
 ```
+
+不确定安装方式时运行 `command -v ma`：路径为 `~/.local/bin/ma` 时使用脚本卸载，否则使用 `brew uninstall mactools`。
 
 ## 命令
 

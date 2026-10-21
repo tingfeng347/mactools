@@ -50,6 +50,8 @@ cd mactools && bash install.sh
 bash uninstall.sh
 ```
 
+To check the installation method, run `command -v ma`: if it points to `~/.local/bin/ma`, uninstall with the script; otherwise use `brew uninstall mactools`.
+
 ## Commands
 
 | Task | Command | Shortcut |

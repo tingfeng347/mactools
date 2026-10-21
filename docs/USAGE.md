@@ -4,7 +4,14 @@
 
 ## 安装与卸载
 
-推荐通过 Homebrew 安装，自动配置 Python 与 fzf 依赖：
+| 安装方式 | 判断 | 卸载 |
+|---|---|---|
+| Homebrew | `brew list --versions mactools` 有版本输出 | `brew uninstall mactools` |
+| 脚本 | `command -v ma` 指向 `~/.local/bin/ma` | 在源码目录运行 `bash uninstall.sh` |
+
+### Homebrew 安装与卸载
+
+推荐使用 Homebrew 安装，自动配置 Python 与 fzf 依赖：
 
 ```bash
 brew install tingfeng347/tap/mactools
@@ -17,7 +24,7 @@ brew tap tingfeng347/tap
 brew install mactools
 ```
 
-Homebrew 安装的版本使用以下命令升级或卸载：
+升级或卸载：
 
 ```bash
 brew update
@@ -35,7 +42,9 @@ rm -rf "${XDG_CACHE_HOME:-$HOME/Library/Caches}/mactools"
 
 软件源：[tingfeng347/homebrew-tap](https://github.com/tingfeng347/homebrew-tap)。
 
-也可以克隆项目，使用脚本安装：
+### 脚本安装
+
+克隆项目并安装：
 
 ```bash
 git clone https://github.com/tingfeng347/mactools.git
@@ -66,6 +75,10 @@ bash install.sh --dry-run
 
 依赖 Homebrew 需自行按 [官方说明](https://brew.sh)安装。安装器会完整暂存并检查全部文件，再部署入口与共享模块；部署写入失败会尝试恢复旧文件。源码目录中也可以直接使用 `./bin/ma` 或 `./bin/maci`。
 
+安装脚本的独立下载模式按 GitHub Raw、jsDelivr 顺序尝试，完整下载并检查后再部署。下载地址可以用 `MACTOOLS_DOWNLOAD_BASES` 指定（空格分隔）。
+
+### 脚本卸载
+
 ```bash
 bash uninstall.sh --dry-run
 bash uninstall.sh
@@ -73,15 +86,13 @@ bash uninstall.sh --purge-cache
 bash uninstall.sh --bin-dir "$HOME/bin"
 ```
 
-如果 `brew uninstall mactools` 提示未安装但 `ma` 仍可运行，说明当前是脚本安装。用 `command -v ma` 确认路径（通常为 `~/.local/bin/ma`），然后运行仓库中的 `bash uninstall.sh`。未保留源码目录时可直接执行：
+如果 `brew uninstall mactools` 提示未安装但 `ma` 仍可运行，说明当前是脚本安装。先运行 `command -v ma` 确认路径，再在源码目录执行 `bash uninstall.sh`。未保留源码目录时可直接执行：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/tingfeng347/mactools/main/uninstall.sh | bash
 ```
 
 卸载只删除 mactools 自己的入口和模块；保留应用、依赖、AI 登录与会话、语言设置、镜像片段和镜像备份。`--purge-cache` 仅额外删除当前用户的 mactools 缓存。
-
-安装脚本的独立下载模式按 GitHub Raw、jsDelivr 顺序尝试，完整下载并检查后再部署。下载地址可以用 `MACTOOLS_DOWNLOAD_BASES` 指定（空格分隔）。
 
 ## 界面演示
 

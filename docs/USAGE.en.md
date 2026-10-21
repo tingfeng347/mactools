@@ -4,6 +4,13 @@ Full details for installation, commands, cleanup scopes, and every feature. For 
 
 ## Install and uninstall
 
+| Install method | Check | Uninstall |
+|---|---|---|
+| Homebrew | `brew list --versions mactools` prints a version | `brew uninstall mactools` |
+| Script | `command -v ma` points to `~/.local/bin/ma` | Run `bash uninstall.sh` in the checkout |
+
+### Homebrew
+
 Install with Homebrew to configure Python and fzf dependencies automatically:
 
 ```bash
@@ -17,7 +24,7 @@ brew tap tingfeng347/tap
 brew install mactools
 ```
 
-Upgrade or uninstall a Homebrew installation:
+Upgrade or uninstall:
 
 ```bash
 brew update
@@ -35,7 +42,9 @@ If you no longer use the tap, run `brew untap tingfeng347/tap`.
 
 Tap: [tingfeng347/homebrew-tap](https://github.com/tingfeng347/homebrew-tap).
 
-You can also clone the project and use the installer:
+### Script install
+
+Clone the project and install:
 
 ```bash
 git clone https://github.com/tingfeng347/mactools.git
@@ -66,6 +75,10 @@ bash install.sh --dry-run
 
 Install Homebrew separately using its [official instructions](https://brew.sh). The installer stages and validates all files before deploying commands and shared modules, and attempts to restore old files if deployment fails. You can also run `./bin/ma` or `./bin/maci` directly from the source directory.
 
+The standalone installer tries GitHub Raw and then jsDelivr, downloading and validating the full payload before deployment. Override download bases with `MACTOOLS_DOWNLOAD_BASES` (space separated).
+
+### Script uninstall
+
 ```bash
 bash uninstall.sh --dry-run
 bash uninstall.sh
@@ -73,15 +86,13 @@ bash uninstall.sh --purge-cache
 bash uninstall.sh --bin-dir "$HOME/bin"
 ```
 
-If `brew uninstall mactools` reports that it is not installed but `ma` still runs, the current copy was installed by the script. Check `command -v ma` (usually `~/.local/bin/ma`), then run `bash uninstall.sh` from the repository. Without a checkout, run:
+If `brew uninstall mactools` reports that it is not installed but `ma` still runs, the current copy was installed by the script. Check `command -v ma`, then run `bash uninstall.sh` from the checkout. Without a checkout, run:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/tingfeng347/mactools/main/uninstall.sh | bash
 ```
 
 The uninstaller removes only mactools commands and modules. It preserves applications, dependencies, AI logins and sessions, language settings, mirror snippets, and mirror backups. `--purge-cache` additionally removes the current user's mactools cache.
-
-The standalone installer tries GitHub Raw and then jsDelivr, downloading and validating the full payload before deployment. Override download bases with `MACTOOLS_DOWNLOAD_BASES` (space separated).
 
 ## Interface demo
 
