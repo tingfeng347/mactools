@@ -90,7 +90,7 @@ gui/src-tauri/target/release/bundle/dmg/
 
 ## 发布
 
-推送 `v*` tag 或手动运行 `Build and release GUI` workflow 会构建、签名、公证并上传通用 DMG；签名凭据见[签名与公证](signing.md)。GUI 的 tag 必须包含 `gui/` 目录，即从 `dev` 分支打 tag。
+推送 `v*` tag 或手动运行 `Build and release GUI` workflow 会构建、签名、公证并上传通用 DMG；签名凭据见[签名与公证](signing.md)。
 
 本地构建通用 DMG：
 
