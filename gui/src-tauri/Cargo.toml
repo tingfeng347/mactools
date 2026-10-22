@@ -1,6 +1,6 @@
 [package]
 name = "mactools-gui"
-version = "0.1.19"
+version = "0.1.20"
 description = "A native desktop GUI for mactools"
 authors = ["tingfeng347"]
 edition = "2021"

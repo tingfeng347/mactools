@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mactools_runtime import atomic_write, config_dir, text
 
-VERSION = "0.1.19"
+VERSION = "0.1.20"
 COMMANDS = {
     "install": "maci", "remove": "macr", "update": "macu", "doctor": "macd",
     "clean": "macc", "optimize": "maco", "mirror": "macm", "ai": "maca",
