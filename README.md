@@ -89,6 +89,7 @@ bash uninstall.sh
 
 - [使用说明](docs/USAGE.md)：安装细节、搜索与选择、卸载与残留、清理范围、系统优化、镜像源、AI 工具、Shell 补全
 - [桌面版 GUI](docs/gui.md)：界面、开发、构建与图标缓存
+- [macOS 签名与公证](docs/signing.md)：Developer ID、公证与 CI 凭据
 - [功能规格](docs/SPEC.md)
 - [Mole 接入说明](docs/MOLE.md)
 - [审查报告](docs/REVIEW.md)
