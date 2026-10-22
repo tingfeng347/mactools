@@ -203,7 +203,7 @@ fn unsupported_cli_error(cli: &Path) -> Option<String> {
     let version = capture(cli, &["--version"]).replace("mactools ", "");
     let version = if version.trim().is_empty() { "旧版本".to_string() } else { version.trim().to_string() };
     Some(format!(
-        "命令行工具 {version} 与桌面版不兼容（缺少 --list-json/--pick），请先运行 brew upgrade mactools 后重试"
+        "命令行工具 {version} 与桌面版不兼容（缺少 --list-json/--pick），请先运行 brew upgrade tingfeng347/tap/mactools 后重试"
     ))
 }
 
@@ -804,6 +804,38 @@ mod tests {
         assert_eq!(entries[0].app_path, None);
         assert_eq!(entries[1].source, "app");
         assert_eq!(entries[1].app_path.as_deref(), Some("/Applications/Foo.app"));
+    }
+
+    fn stub_cli(help: &str) -> PathBuf {
+        let unique = format!("{}-{}", std::process::id(), help.len());
+        let dir = std::env::temp_dir().join(format!("mactools-cli-{unique}"));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("ma");
+        std::fs::write(
+            &path,
+            format!(
+                "#!/bin/sh\ncase \"$1\" in\n  --help) echo '{help}' ;;\n  --version) echo 'mactools 0.1.17' ;;\nesac\n"
+            ),
+        )
+        .expect("stub written");
+        let mut perms = std::fs::metadata(&path).expect("stub metadata").permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+        std::fs::set_permissions(&path, perms).expect("stub executable");
+        path
+    }
+
+    #[test]
+    fn reports_outdated_cli_when_machine_flags_are_missing() {
+        let cli = stub_cli("usage: ma {install,remove,update}");
+        let message = unsupported_cli_error(&cli).expect("outdated CLI is rejected");
+        assert!(message.contains("0.1.17"), "{message}");
+        assert!(message.contains("brew upgrade tingfeng347/tap/mactools"), "{message}");
+    }
+
+    #[test]
+    fn accepts_cli_with_machine_flags() {
+        let cli = stub_cli("options: --list-json --pick");
+        assert_eq!(unsupported_cli_error(&cli), None);
     }
 
     #[test]
