@@ -69,6 +69,7 @@ struct RunResult {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct EnvInfo {
+    app_version: String,
     cli_path: String,
     cli_version: String,
     brew_path: String,
@@ -191,6 +192,21 @@ fn run_capture(program: &Path, args: &[String]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Machine-facing flags the desktop app depends on. A CLI installed from an
+/// older formula lacks them and answers with raw argparse errors, so probe once
+/// and surface an actionable upgrade hint instead.
+fn unsupported_cli_error(cli: &Path) -> Option<String> {
+    let help = capture(cli, &["--help"]);
+    if help.contains("--list-json") && help.contains("--pick") {
+        return None;
+    }
+    let version = capture(cli, &["--version"]).replace("mactools ", "");
+    let version = if version.trim().is_empty() { "旧版本".to_string() } else { version.trim().to_string() };
+    Some(format!(
+        "命令行工具 {version} 与桌面版不兼容（缺少 --list-json/--pick），请先运行 brew upgrade mactools 后重试"
+    ))
+}
+
 fn capture(program: &Path, args: &[&str]) -> String {
     base_command(program)
         .args(args)
@@ -257,6 +273,7 @@ fn environment(state: State<'_, AppState>) -> EnvInfo {
     let formula_count = brew.as_ref().map(|path| count_lines(path, &["list", "--formula", "-1"])).unwrap_or(0);
     let cask_count = brew.as_ref().map(|path| count_lines(path, &["list", "--cask", "-1"])).unwrap_or(0);
     EnvInfo {
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
         cli_path: cli.map(|path| path.to_string_lossy().to_string()).unwrap_or_default(),
         cli_version: version.replace("mactools ", ""),
         brew_path: brew.as_ref().map(|path| path.to_string_lossy().to_string()).unwrap_or_default(),
@@ -297,6 +314,9 @@ async fn search_packages(
     }
     let cli = state.cli.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        if let Some(message) = unsupported_cli_error(&cli) {
+            return Err(message);
+        }
         let mut args = vec![action.clone(), "--list-json".to_string()];
         if action == "remove" {
             args.push("--apps".into());
@@ -333,8 +353,14 @@ async fn run_mactools(
     if args.iter().any(|arg| arg.contains('\0')) {
         return Err("命令参数包含非法字符".into());
     }
+    let needs_inventory = matches!(head, "install" | "remove" | "update");
     let cli = state.cli.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        if needs_inventory {
+            if let Some(message) = unsupported_cli_error(&cli) {
+                return Err(message);
+            }
+        }
         let mut child = base_command(&cli)
             .args(&args)
             .stdout(Stdio::piped())

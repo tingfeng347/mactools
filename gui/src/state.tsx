@@ -193,7 +193,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const confirmAction = useCallback(
     (options: ConfirmOptions) =>
       new Promise<boolean>((resolve) => {
-        setConfirmState({ options, resolve });
+        // Always clear the dialog before resolving, otherwise the modal stays on
+        // screen after the caller has already continued or bailed out.
+        setConfirmState({
+          options,
+          resolve: (value) => {
+            setConfirmState(null);
+            resolve(value);
+          },
+        });
       }),
     [],
   );

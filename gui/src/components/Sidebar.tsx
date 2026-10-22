@@ -90,7 +90,7 @@ export function Sidebar({
             {brewReady ? 'Homebrew 就绪' : '缺少 Homebrew'}
           </div>
         </div>
-        <p className="sidebar-version">{PAGES[page].title} · v0.1.17</p>
+        <p className="sidebar-version">{PAGES[page].title} · v{env?.appVersion || '—'}</p>
       </div>
     </aside>
   );

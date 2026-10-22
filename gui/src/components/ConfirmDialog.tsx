@@ -1,14 +1,38 @@
+import { useEffect } from 'react';
 import { AlertTriangle, ShieldCheck } from 'lucide-react';
 import { useApp } from '../state';
 
 export function ConfirmDialog() {
   const { confirmState } = useApp();
+  const activeResolve = confirmState?.resolve;
+
+  useEffect(() => {
+    if (!activeResolve) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        activeResolve(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeResolve]);
+
   if (!confirmState) return null;
   const { options, resolve } = confirmState;
   const Icon = options.danger ? AlertTriangle : ShieldCheck;
+
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className={`modal ${options.danger ? 'danger' : ''}`}>
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      onClick={() => resolve(false)}
+    >
+      <div
+        className={`modal ${options.danger ? 'danger' : ''}`}
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="modal-icon">
           <Icon size={22} />
         </div>

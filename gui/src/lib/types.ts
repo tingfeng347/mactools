@@ -1,4 +1,5 @@
 export type EnvInfo = {
+  appVersion: string;
   cliPath: string;
   cliVersion: string;
   brewPath: string;
