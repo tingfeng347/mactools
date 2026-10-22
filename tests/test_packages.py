@@ -1114,6 +1114,42 @@ for row in rows:
             self.assertEqual({packages.without_color(line) for line in result.stdout.splitlines()},
                              {packages.without_color(row.selector_line('install')) for row in rows})
 
+    def test_list_json_contract_never_touches_fzf_or_cache(self):
+        code, output = self.invoke('install', '--list-json', '--exact', 'git')
+        self.assertEqual(code, 0)
+        entries = json.loads(output)
+        self.assertTrue(any(entry['source'] == 'formula' and entry['name'] == 'git'
+                            and entry['displayName'] == 'git' for entry in entries))
+        self.assertIn('target', entries[0])
+        self.assertFalse((self.root / 'cache').exists())
+        self.assertFalse((self.root / 'fzf.log').exists())
+
+    def test_list_json_includes_native_app_path_and_identity(self):
+        app = packages.Row('app', 'app-' + 'b' * 64, '1.0', display_name='My App',
+                           app_path='/Applications/My App.app')
+        with patch.object(packages, 'native_rows', return_value=[app]):
+            code, output = self.invoke('remove', '--apps', '--list-json')
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(output), [{
+            'source': 'app', 'name': app.name, 'displayName': 'My App',
+            'current': '1.0', 'target': '-', 'appPath': '/Applications/My App.app',
+        }])
+        self.assertFalse((self.root / 'cache').exists())
+
+    def test_explicit_pick_and_all_bypass_fzf(self):
+        code, output = self.invoke('install', '--dry-run', '--pick', 'formula:git')
+        self.assertEqual(code, 0)
+        self.assertIn('brew install --formula git', output)
+        code, output = self.invoke('update', '--all', '--dry-run')
+        self.assertEqual(code, 0)
+        self.assertIn('brew upgrade --formula git', output)
+        code, output = self.invoke('update', '--dry-run', '--pick', 'cask:firefox')
+        self.assertEqual(code, 0)
+        self.assertIn('brew upgrade --cask firefox', output)
+        self.assertFalse((self.root / 'fzf.log').exists())
+        with self.assertRaises(ValueError):
+            self.invoke('install', '--dry-run', '--pick', 'cask:missing')
+
     def test_selection_and_timeout_validation(self):
         for value in ("nan", "inf", "0", "-1"):
             with self.assertRaises(ValueError):

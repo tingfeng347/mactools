@@ -1,0 +1,23 @@
+[package]
+name = "mactools-gui"
+version = "0.1.17"
+description = "A native desktop GUI for mactools"
+authors = ["tingfeng347"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "mactools_gui_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+portable-pty = "0.9"
+which = "8"
+plist = "1"
+base64 = "0.22"

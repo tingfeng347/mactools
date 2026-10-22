@@ -33,6 +33,14 @@ ma ai install --all --dry-run
 
 ![maci 搜索 fish，显示已安装版本和软件详情](docs/images/install-status.png)
 
+## 桌面版 GUI
+
+Tauri 桌面界面（`dev` 分支）覆盖全部命令，内置完整交互终端。
+
+![mactools 桌面版概览](docs/images/gui-overview.jpg)
+
+[使用与构建说明](docs/gui.md) · [GUI 源码](gui)
+
 ## 安装与卸载
 
 > **前置要求**：请先安装 [Homebrew](https://brew.sh)。尚未安装时执行：

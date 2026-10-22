@@ -479,7 +479,8 @@ def rows(queries, opts):
                           and cask_identity(queries.brew, row.name) in owned)]
     # Remember the token of every managed app so the next maci/macr run can
     # keep the merged row searchable without another Homebrew inventory.
-    if opts.action != 'update' and 'cask' in opts.sources and not (opts.list or opts.dry_run):
+    readonly = opts.list or opts.dry_run or getattr(opts, 'list_json', False)
+    if opts.action != 'update' and 'cask' in opts.sources and not readonly:
         save_app_alias_map({path: next(iter(identities))[1]
                             for path, identities in app_owners.items()
                             if len(identities) == 1})
@@ -490,7 +491,9 @@ def rows(queries, opts):
     # Installed rows arrive before potentially slow catalog enumeration.
     yield from sorted(installed, key=lambda row: (row.source, row.name))
     with ThreadPoolExecutor(max_workers=len(opts.sources)) as pool:
-        futures = {pool.submit(catalog, queries, source, opts.refresh, not (opts.list or opts.dry_run)): source for source in opts.sources}
+        futures = {pool.submit(catalog, queries, source, opts.refresh,
+                               not (opts.list or opts.dry_run or getattr(opts, 'list_json', False))): source
+                   for source in opts.sources}
         for future in as_completed(futures):
             source = futures[future]
             for name in future.result():
@@ -608,7 +611,7 @@ def app_selector_entry(row):
 
 
 def save_selector(queries, opts, result):
-    if opts.list or opts.dry_run or queries.cancelled:
+    if opts.list or opts.dry_run or getattr(opts, 'list_json', False) or queries.cancelled:
         return
     try:
         aliases = (app_alias_map()
@@ -966,6 +969,34 @@ def select(queries, opts):
         return selected
 
 
+def select_explicit(queries, opts):
+    """Resolve GUI-supplied identities without opening fzf.
+
+    The desktop app first calls `--list` to show candidates, then passes the
+    exact source/name pair back. Nothing is matched by shell-expanded text.
+    """
+    available = list(rows(queries, opts))
+    if opts.select_all:
+        if not available:
+            print(text('没有可更新的软件。', 'Nothing to update.'))
+            return []
+        return available
+    index = {(row.source, row.name): row for row in available}
+    selected = []
+    for value in opts.pick:
+        source, separator, name = value.partition(':')
+        if not separator or source not in ('formula', 'cask', 'app') or not name:
+            raise ValueError('Invalid --pick selection; expected SOURCE:NAME')
+        row = index.get((source, name))
+        if row is None:
+            raise ValueError(text('所选软件已变化，请重新搜索：', 'Selection changed; search again: ') + value)
+        if row not in selected:
+            selected.append(row)
+    if not selected:
+        raise ValueError(text('没有匹配的软件。', 'No matching package.'))
+    return selected
+
+
 def plan(brew, action, selected):
     operation = {"install": "install", "remove": "uninstall", "update": "upgrade"}[action]
     return [[brew, operation, "--" + source, *sorted({row.name for row in selected if row.source == source})]
@@ -986,10 +1017,18 @@ def parser():
     result.add_argument("--refresh", "-r", action="store_true", help=text("重新查询目录；不会运行 brew update", "Reload names; does not run brew update"))
     result.add_argument("--refresh-index", action="store_true", help=text("仅 update：明确执行 brew update", "update only: explicitly run brew update"))
     result.add_argument("--list", action="store_true", help=text("仅列出；不写入工具缓存", "List only; do not write tool cache"))
+    # Stable machine-readable inventory for the desktop app. It is deliberately
+    # read-only: no selector snapshot, catalog cache or alias map is written.
+    result.add_argument("--list-json", action="store_true", help=argparse.SUPPRESS)
     result.add_argument("--dry-run", action="store_true", help=text("选择后只打印计划，不修改软件或工具缓存", "Select and print plan without changing packages or tool cache"))
     result.add_argument("--yes", "-y", action="store_true", help=text("只跳过 mactools 确认", "Skip only mactools confirmation"))
     result.add_argument("--timeout", type=float, default=15, metavar="SECONDS", help=text("每个只读查询的超时（默认 15 秒）", "Timeout per read-only query (default: 15 seconds)"))
     result.add_argument("--scan-timeout", type=float, default=120, metavar="SECONDS", help=text("仅 remove：每个应用残留扫描的超时（默认 120 秒）", "remove only: leftover scan timeout per app (default: 120 seconds)"))
+    # Machine-facing selection used by the desktop app. These bypass fzf and
+    # never appear in terminal help: --pick names one exact SOURCE:NAME row and
+    # --all is limited to update so a GUI cannot mass-install or mass-remove.
+    result.add_argument("--pick", action="append", default=[], metavar="SOURCE:NAME", help=argparse.SUPPRESS)
+    result.add_argument("--all", dest="select_all", action="store_true", help=argparse.SUPPRESS)
     result.add_argument("query", nargs="*", help=text("软件名称查询", "Package name query"))
     return result
 
@@ -1002,7 +1041,16 @@ def main(argv):
         raise ValueError("--scan-timeout must be a positive finite number")
     if opts.scan_timeout != 120 and opts.action != 'remove':
         raise ValueError(text('--scan-timeout 仅用于 remove', '--scan-timeout requires remove'))
-    if opts.refresh_index and (opts.action != "update" or opts.list or opts.dry_run):
+    if opts.pick and opts.select_all:
+        raise ValueError('--pick and --all are mutually exclusive')
+    if opts.select_all and opts.action != 'update':
+        raise ValueError('--all is only available for update')
+    if (opts.pick or opts.select_all) and opts.refresh_index:
+        raise ValueError('--pick/--all cannot be combined with --refresh-index')
+    if opts.list_json and (opts.list or opts.dry_run or opts.refresh_index
+                           or opts.pick or opts.select_all or opts.yes):
+        raise ValueError('--list-json cannot be combined with other output or execution flags')
+    if opts.refresh_index and (opts.action != "update" or opts.list or opts.dry_run or opts.list_json):
         raise ValueError(text("--refresh-index 仅用于 update，不能与 --list 或 --dry-run 组合", "--refresh-index requires update and cannot be combined with --list or --dry-run"))
     if (opts.apps or opts.app_data) and opts.action != 'remove':
         raise ValueError(text('--apps 和 --app-data 仅用于 remove', '--apps and --app-data require remove'))
@@ -1036,14 +1084,25 @@ def main(argv):
             if code:
                 return code
             invalidate_selector_cache()
-        if opts.list:
+        if opts.list or opts.list_json:
             query = " ".join(opts.query)
-            for row in rows(queries, opts):
-                if matches(row.display_name or row.name, query, opts.exact):
+            found = [row for row in rows(queries, opts)
+                     if matches(row.display_name or row.name, query, opts.exact)]
+            if opts.list_json:
+                print(json.dumps([{
+                    'source': row.source,
+                    'name': row.name,
+                    'displayName': row.display_name or row.name,
+                    'current': row.current,
+                    'target': row.target,
+                    'appPath': row.app_path or None,
+                } for row in found], ensure_ascii=False, separators=(',', ':')))
+            else:
+                for row in found:
                     print('\t'.join((row.source, row.display_name, row.current, row.name))
                           if row.source == 'app' else row.line())
             return 0
-        selected = select(queries, opts)
+        selected = select_explicit(queries, opts) if (opts.pick or opts.select_all) else select(queries, opts)
         return execute_selection(brew, queries, opts, selected)
     except BrewError as error:
         print(str(error), file=sys.stderr)
