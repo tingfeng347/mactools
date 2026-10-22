@@ -82,8 +82,13 @@ export function Sidebar({
         </button>
         <div className="status-stack">
           <div className="status-line">
-            <span className={cn('status-dot', cliReady ? 'ok' : 'bad')} />
+            <span className={cn('status-dot', env?.cliOutdated ? 'warn' : cliReady ? 'ok' : 'bad')} />
             mactools {env?.cliVersion || (cliReady ? '' : '未安装')}
+            {env?.cliOutdated && (
+              <span className="status-note" title="运行 brew upgrade tingfeng347/tap/mactools 升级">
+                需升级
+              </span>
+            )}
           </div>
           <div className="status-line">
             <span className={cn('status-dot', brewReady ? 'ok' : 'warn')} />

@@ -298,6 +298,15 @@ input {
   background: var(--warn);
   box-shadow: 0 0 8px rgba(251, 191, 36, 0.5);
 }
+.status-note {
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.12);
+  color: var(--warn);
+  font-size: 10px;
+  line-height: 1.5;
+}
 .sidebar-version {
   margin: 0;
   padding: 0 4px;

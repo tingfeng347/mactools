@@ -2,6 +2,7 @@ export type EnvInfo = {
   appVersion: string;
   cliPath: string;
   cliVersion: string;
+  cliOutdated: boolean;
   brewPath: string;
   brewVersion: string;
   pythonPath: string;

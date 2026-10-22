@@ -118,7 +118,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const toast = useCallback((message: string, tone: Toast['tone'] = 'info') => {
     const id = newId();
-    setToasts((current) => [...current, { id, message, tone }]);
+    setToasts((current) => {
+      // Repeated failures (double Enter, retried requests) should not stack
+      // identical cards on top of each other.
+      if (current.some((item) => item.message === message && item.tone === tone)) {
+        return current;
+      }
+      return [...current, { id, message, tone }];
+    });
     window.setTimeout(() => {
       setToasts((current) => current.filter((item) => item.id !== id));
     }, 4600);

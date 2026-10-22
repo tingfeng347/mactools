@@ -72,6 +72,7 @@ struct EnvInfo {
     app_version: String,
     cli_path: String,
     cli_version: String,
+    cli_outdated: bool,
     brew_path: String,
     brew_version: String,
     python_path: String,
@@ -182,7 +183,11 @@ fn run_capture(program: &Path, args: &[String]) -> Result<String, String> {
         .map_err(|error| format!("无法启动 mactools：{error}"))?;
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let code = output.status.code().map(|value| value.to_string()).unwrap_or_else(|| "?".into());
+        let code = output.status.code();
+        if let Some(message) = outdated_cli_message(program, args, &detail, code) {
+            return Err(message);
+        }
+        let code = code.map(|value| value.to_string()).unwrap_or_else(|| "?".into());
         return Err(if detail.is_empty() {
             format!("mactools 退出码 {code}")
         } else {
@@ -192,19 +197,57 @@ fn run_capture(program: &Path, args: &[String]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-/// Machine-facing flags the desktop app depends on. A CLI installed from an
-/// older formula lacks them and answers with raw argparse errors, so probe once
-/// and surface an actionable upgrade hint instead.
-fn unsupported_cli_error(cli: &Path) -> Option<String> {
-    let help = capture(cli, &["--help"]);
-    if help.contains("--list-json") && help.contains("--pick") {
-        return None;
+/// First CLI release that ships the machine-facing flags (`--list-json`,
+/// `--pick`) the desktop app drives every query and action with.
+const MIN_CLI_VERSION: &str = "0.1.18";
+
+fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
+    let token = text
+        .split_whitespace()
+        .find(|part| part.starts_with(|c: char| c.is_ascii_digit()))?;
+    let core = token.split(['-', '+']).next()?;
+    let mut parts = core.split('.');
+    let major = parts.next()?.parse::<u64>().ok()?;
+    let minor = parts.next().map_or(Some(0), |value| value.parse::<u64>().ok())?;
+    let patch = parts.next().map_or(Some(0), |value| value.parse::<u64>().ok())?;
+    Some((major, minor, patch))
+}
+
+fn cli_version(cli: &Path) -> Option<(u64, u64, u64)> {
+    parse_version(&capture(cli, &["--version"]))
+}
+
+fn is_cli_outdated(version_output: &str) -> bool {
+    match (parse_version(version_output), parse_version(MIN_CLI_VERSION)) {
+        (Some(installed), Some(minimum)) => installed < minimum,
+        _ => false,
     }
-    let version = capture(cli, &["--version"]).replace("mactools ", "");
-    let version = if version.trim().is_empty() { "旧版本".to_string() } else { version.trim().to_string() };
-    Some(format!(
-        "命令行工具 {version} 与桌面版不兼容（缺少 --list-json/--pick），请先运行 brew upgrade tingfeng347/tap/mactools 后重试"
-    ))
+}
+
+fn upgrade_hint(installed: Option<(u64, u64, u64)>) -> String {
+    let installed = installed
+        .map(|(major, minor, patch)| format!("{major}.{minor}.{patch}"))
+        .unwrap_or_else(|| "未知版本".to_string());
+    format!(
+        "命令行工具 {installed} 低于最低要求 {MIN_CLI_VERSION}，缺少桌面版需要的接口。请运行 brew upgrade tingfeng347/tap/mactools，然后重新打开 mactools。"
+    )
+}
+
+/// Blocks a stale formula before it can answer with a raw argparse error.
+fn outdated_cli_error(cli: &Path) -> Option<String> {
+    let installed = cli_version(cli)?;
+    let expected = parse_version(MIN_CLI_VERSION)?;
+    (installed < expected).then(|| upgrade_hint(Some(installed)))
+}
+
+/// Fallback for a CLI whose `--version` could not be parsed: recognise argparse
+/// rejecting the machine-facing flags and answer with the same upgrade hint.
+fn outdated_cli_message(cli: &Path, args: &[String], detail: &str, code: Option<i32>) -> Option<String> {
+    let used_machine_flag = args
+        .iter()
+        .any(|arg| arg == "--list-json" || arg == "--pick");
+    let rejected = detail.contains("--list-json") || detail.contains("--pick");
+    (code == Some(2) && used_machine_flag && rejected).then(|| upgrade_hint(cli_version(cli)))
 }
 
 fn capture(program: &Path, args: &[&str]) -> String {
@@ -276,6 +319,7 @@ fn environment(state: State<'_, AppState>) -> EnvInfo {
         app_version: env!("CARGO_PKG_VERSION").to_string(),
         cli_path: cli.map(|path| path.to_string_lossy().to_string()).unwrap_or_default(),
         cli_version: version.replace("mactools ", ""),
+        cli_outdated: is_cli_outdated(&version),
         brew_path: brew.as_ref().map(|path| path.to_string_lossy().to_string()).unwrap_or_default(),
         brew_version,
         python_path: python,
@@ -314,7 +358,7 @@ async fn search_packages(
     }
     let cli = state.cli.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        if let Some(message) = unsupported_cli_error(&cli) {
+        if let Some(message) = outdated_cli_error(&cli) {
             return Err(message);
         }
         let mut args = vec![action.clone(), "--list-json".to_string()];
@@ -357,7 +401,7 @@ async fn run_mactools(
     let cli = state.cli.clone();
     tauri::async_runtime::spawn_blocking(move || {
         if needs_inventory {
-            if let Some(message) = unsupported_cli_error(&cli) {
+            if let Some(message) = outdated_cli_error(&cli) {
                 return Err(message);
             }
         }
@@ -806,16 +850,14 @@ mod tests {
         assert_eq!(entries[1].app_path.as_deref(), Some("/Applications/Foo.app"));
     }
 
-    fn stub_cli(help: &str) -> PathBuf {
-        let unique = format!("{}-{}", std::process::id(), help.len());
+    fn stub_cli(version: &str) -> PathBuf {
+        let unique = format!("{}-{}", std::process::id(), version.replace('.', "_"));
         let dir = std::env::temp_dir().join(format!("mactools-cli-{unique}"));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let path = dir.join("ma");
         std::fs::write(
             &path,
-            format!(
-                "#!/bin/sh\ncase \"$1\" in\n  --help) echo '{help}' ;;\n  --version) echo 'mactools 0.1.17' ;;\nesac\n"
-            ),
+            format!("#!/bin/sh\ncase \"$1\" in\n  --version) echo 'mactools {version}' ;;\nesac\n"),
         )
         .expect("stub written");
         let mut perms = std::fs::metadata(&path).expect("stub metadata").permissions();
@@ -825,17 +867,43 @@ mod tests {
     }
 
     #[test]
-    fn reports_outdated_cli_when_machine_flags_are_missing() {
-        let cli = stub_cli("usage: ma {install,remove,update}");
-        let message = unsupported_cli_error(&cli).expect("outdated CLI is rejected");
+    fn parses_cli_version_output() {
+        assert_eq!(parse_version("mactools 0.1.19"), Some((0, 1, 19)));
+        assert_eq!(parse_version("mactools 1.2"), Some((1, 2, 0)));
+        assert_eq!(parse_version("0.2.0-beta.1"), Some((0, 2, 0)));
+        assert_eq!(parse_version("no version here"), None);
+    }
+
+    #[test]
+    fn rejects_cli_older_than_the_minimum_supported_version() {
+        let cli = stub_cli("0.1.17");
+        let message = outdated_cli_error(&cli).expect("outdated CLI is rejected");
         assert!(message.contains("0.1.17"), "{message}");
+        assert!(message.contains(MIN_CLI_VERSION), "{message}");
         assert!(message.contains("brew upgrade tingfeng347/tap/mactools"), "{message}");
     }
 
     #[test]
-    fn accepts_cli_with_machine_flags() {
-        let cli = stub_cli("options: --list-json --pick");
-        assert_eq!(unsupported_cli_error(&cli), None);
+    fn flags_outdated_cli_for_the_sidebar() {
+        assert!(is_cli_outdated("mactools 0.1.17"));
+        assert!(!is_cli_outdated("mactools 0.1.19"));
+        assert!(!is_cli_outdated(""));
+    }
+
+    #[test]
+    fn accepts_cli_at_or_above_the_minimum_supported_version() {
+        assert_eq!(outdated_cli_error(&stub_cli("0.1.18")), None);
+        assert_eq!(outdated_cli_error(&stub_cli("0.1.19")), None);
+    }
+
+    #[test]
+    fn turns_argparse_rejection_into_an_upgrade_hint() {
+        let cli = stub_cli("0.1.17");
+        let args = vec!["install".to_string(), "--list-json".to_string()];
+        let detail = "ma: error: unrecognized arguments: --list-json";
+        let message = outdated_cli_message(&cli, &args, detail, Some(2)).expect("hint");
+        assert!(message.contains("brew upgrade tingfeng347/tap/mactools"), "{message}");
+        assert_eq!(outdated_cli_message(&cli, &args, "boom", Some(1)), None);
     }
 
     #[test]
