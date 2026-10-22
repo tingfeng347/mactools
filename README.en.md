@@ -35,6 +35,12 @@ ma ai install --all --dry-run
 
 ## Install and uninstall
 
+> **Prerequisite**: install [Homebrew](https://brew.sh) first. If it is not installed yet:
+>
+> ```bash
+> /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+> ```
+
 Homebrew:
 
 ```bash

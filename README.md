@@ -35,6 +35,12 @@ ma ai install --all --dry-run
 
 ## 安装与卸载
 
+> **前置要求**：请先安装 [Homebrew](https://brew.sh)。尚未安装时执行：
+>
+> ```bash
+> /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+> ```
+
 Homebrew 安装/卸载：
 
 ```bash
@@ -42,7 +48,7 @@ brew install tingfeng347/tap/mactools
 brew uninstall mactools
 ```
 
-脚本安装/卸载（部署到 `~/.local/bin`，不需要 sudo）：
+也可以从源码安装/卸载（部署到 `~/.local/bin`，不需要 sudo）：
 
 ```bash
 git clone https://github.com/tingfeng347/mactools.git
