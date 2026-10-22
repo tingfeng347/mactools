@@ -15,7 +15,7 @@
    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
    ```
 
-2. **mactools CLI**：
+2. **mactools CLI**：桌面版 cask 会自动安装，也可单独安装。
 
    ```bash
    brew install tingfeng347/tap/mactools
@@ -27,6 +27,15 @@
    xcode-select --install
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    ```
+
+## 安装
+
+桌面版与 CLI 分开分发；安装 cask 时会自动安装 CLI 依赖：
+
+```bash
+brew install --cask tingfeng347/tap/mactools-gui
+brew uninstall --cask mactools-gui
+```
 
 首次启动时，界面会检查 Homebrew 与 `ma` 命令。缺少 Homebrew 时提供安装文档入口；缺少 `ma` 时给出安装命令并可一键复制。
 

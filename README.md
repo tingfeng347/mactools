@@ -37,6 +37,10 @@ ma ai install --all --dry-run
 
 Tauri 桌面界面（`dev` 分支）覆盖全部命令，内置完整交互终端。
 
+```bash
+brew install --cask tingfeng347/tap/mactools-gui
+```
+
 ![mactools 桌面版概览](docs/images/gui-overview.jpg)
 
 [使用与构建说明](docs/gui.md) · [GUI 源码](gui)
