@@ -88,6 +88,17 @@ gui/src-tauri/target/release/bundle/dmg/
 
 当前构建未签名、未公证。首次打开时如被 Gatekeeper 拦截，可在 Finder 中右键选择「打开」。
 
+## 发布
+
+构建通用 DMG 后上传到 Release，并同步更新 [homebrew-tap](https://github.com/tingfeng347/homebrew-tap) 中 `Casks/mactools-gui.rb` 的 `version` 与 `sha256`：
+
+```bash
+cd gui
+PATH="$HOME/.cargo/bin:$PATH" CI=true npm run tauri -- build \
+  --target universal-apple-darwin --bundles dmg
+shasum -a 256 src-tauri/target/universal-apple-darwin/release/bundle/dmg/mactools_<version>_universal.dmg
+```
+
 ## 实现说明
 
 - **直接参数调用**：Rust 后端只允许固定的 `ma` 子命令，使用 argv 传参，不经过 shell 拼接。
@@ -110,7 +121,13 @@ GUI 会把应用图标缓存到：
 brew uninstall mactools
 ```
 
-桌面版本身可直接移到废纸篓；如需连同 CLI 缓存一起清理：
+卸载桌面版：
+
+```bash
+brew uninstall --cask mactools-gui
+```
+
+如需连同 CLI 缓存一起清理：
 
 ```bash
 rm -rf "${XDG_CACHE_HOME:-$HOME/Library/Caches}/mactools"
