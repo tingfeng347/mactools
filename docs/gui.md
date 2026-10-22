@@ -138,6 +138,7 @@ rm -rf "${XDG_CACHE_HOME:-$HOME/Library/Caches}/mactools"
 | 现象 | 处理 |
 |---|---|
 | 提示未找到 mactools | 先 `brew install tingfeng347/tap/mactools`，或设置 `MACTOOLS_BIN` |
+| 搜索报「与桌面版不兼容」 | 命令行工具版本落后，执行 `brew upgrade tingfeng347/tap/mactools` |
 | 提示未检测到 Homebrew | 先安装 Homebrew（见上文），然后重新打开应用 |
 | 开发窗口空白 | 确认 1420 端口未被占用，重新执行 `npm run tauri -- dev` |
 | 构建失败提示缺少 Rust | 安装 Rust 1.77.2+ 与 Xcode Command Line Tools |
