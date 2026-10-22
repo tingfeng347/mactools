@@ -116,3 +116,4 @@ rm -rf "${XDG_CACHE_HOME:-$HOME/Library/Caches}/mactools"
 | 开发窗口空白 | 确认 1420 端口未被占用，重新执行 `npm run tauri -- dev` |
 | 构建失败提示缺少 Rust | 安装 Rust 1.77.2+ 与 Xcode Command Line Tools |
 | 应用被系统拦截 | Finder 中右键「打开」；正式分发需签名与公证 |
+| DMG 打包报 AppleEvent 超时 | 允许终端控制 Finder，或以 `CI=true` 前缀跳过 Finder 美化 |
