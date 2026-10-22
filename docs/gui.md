@@ -86,13 +86,11 @@ gui/src-tauri/target/release/bundle/macos/mactools.app
 gui/src-tauri/target/release/bundle/dmg/
 ```
 
-本地开发构建未签名、未公证，首次打开时如被 Gatekeeper 拦截，可在 Finder 中右键选择「打开」。正式发布需按[签名与公证](signing.md)配置 Developer ID。
+当前构建未签名、未公证。首次打开时如被 Gatekeeper 拦截，可在 Finder 中右键选择「打开」。
 
 ## 发布
 
-推送 `v*` tag 或手动运行 `Build and release GUI` workflow 会构建、签名、公证并上传通用 DMG；签名凭据见[签名与公证](signing.md)。
-
-本地构建通用 DMG：
+构建通用 DMG 后上传到 Release，并同步更新 [homebrew-tap](https://github.com/tingfeng347/homebrew-tap) 中 `Casks/mactools-gui.rb` 的 `version` 与 `sha256`：
 
 ```bash
 cd gui
