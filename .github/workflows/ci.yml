@@ -3,9 +3,18 @@ on: [push, pull_request]
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
-        python: ['3.9', '3.13']
+        include:
+          # Python 3.9 has no Ubuntu 26.04 or macOS arm64 setup-python build.
+          - os: ubuntu-24.04
+            python: '3.9'
+          - os: macos-15-intel
+            python: '3.9'
+          - os: ubuntu-latest
+            python: '3.13'
+          - os: macos-latest
+            python: '3.13'
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
