@@ -72,7 +72,8 @@ def selector_widths(action, terminal_width=None):
     available = inner - preview - 4 if preview >= 50 else inner - 4
     version_columns = 2 if action == "update" else 1
     version_width = 18
-    name_width = max(20, available - 8 - 2 - version_columns * version_width - (version_columns + 1))
+    # Keep versions beside the names instead of stretching to the list's edge.
+    name_width = max(20, min(40, available - 8 - 2 - version_columns * version_width - (version_columns + 1)))
     return name_width, version_width
 
 
@@ -205,9 +206,9 @@ class Row:
             kind = f'\033[{color}m{kind}\033[0m'
             if installed:
                 check = f'\033[38;5;78m{check}\033[0m'
-        columns = [kind, name, cell(clip_cell(current, version_width), version_width, right=True) + ' ' + check]
+        columns = [kind, name, cell(clip_cell(current, version_width), version_width) + ' ' + check]
         if action == "update":
-            columns.append(cell(clean(self.target), version_width, right=True))
+            columns.append(cell(clip_cell(clean(self.target), version_width), version_width))
         return self.line() + "\t" + "\t".join(columns)
 
     @classmethod
@@ -823,10 +824,10 @@ def select(queries, opts):
         widths = selector_widths(opts.action)
         name_width, version_width = widths
         preview = shlex.join([sys.executable, str(Path(__file__).resolve()), '--preview', queries.brew, str(opts.timeout)]) + ' {1} {2}'
-        headings = cell(text('类型', 'Type'), 8) + ' ' + cell(text('名称', 'Name'), name_width, center=True) + ' '
-        headings += cell(text('已安装版本', 'Installed version'), version_width, right=True) + '  '
+        headings = cell(text('类型', 'Type'), 8) + ' ' + cell(text('名称', 'Name'), name_width) + ' '
+        headings += cell(text('已安装版本', 'Installed version'), version_width) + '  '
         if opts.action == 'update':
-            headings += ' ' + cell(text('可更新至', 'Available version'), version_width, right=True)
+            headings += ' ' + cell(text('可更新至', 'Available version'), version_width)
         header = text('Tab 多选  Enter 确认  Ctrl+R 刷新  Ctrl+E 匹配  Ctrl+/ 详情  Esc 退出', 'Tab select  Enter confirm  Ctrl+R refresh  Ctrl+E match  Ctrl+/ details  Esc exit') + '\n\n' + headings
         argv = [fzf, '--ansi', '--multi', '--delimiter=\t', '--nth=2', '--with-nth=5..', '--tabstop=1',
                 '--print-query', '--expect=ctrl-e,ctrl-r', '--query=' + query,

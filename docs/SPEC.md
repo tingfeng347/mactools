@@ -33,6 +33,9 @@ maci、macu、macr 的列表快照只用于缩短首次显示时间。安装、�
 
 ## 开发契约
 
+包选择器的名称列填充宽度最多 40 个终端字符，避免宽窗口中名称与版本相距过远；保留完整名称用于搜索。
+名称、已安装版本及可更新版本的表头与内容统一左对齐，版本仍保留固定列宽及已安装标记。
+
 bin/ma -> python3 bin/mactools.py。mactools.py 设置 MACTOOLS_LANG 并按功能导入模块。
 包功能模块 bin/mactools_packages.py: main(argv)，argv 包含 action install/remove/update。
 本机应用模块 bin/mactools_apps.py: installed_apps/resolve_apps/AppUninstallPlan，复用 Mole 卸载源码。

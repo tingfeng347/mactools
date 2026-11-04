@@ -903,13 +903,14 @@ for row in rows:
         for terminal_width in (160, 200):
             widths = packages.selector_widths("install", terminal_width)
             self.assertGreater(widths[0], 32)
+            self.assertLessEqual(widths[0], 40)
             short = packages.without_color(packages.Row("formula", "fish", "4.9.3").selector_line("install", widths)).split("\t")[4:]
             long = packages.without_color(packages.Row("cask", "font-big-shoulders-stencil-display-sc").selector_line("install", widths)).split("\t")[4:]
             self.assertEqual(len(short[1]), len(long[1]))
             self.assertTrue(short[1].startswith("fish"))
             self.assertTrue(long[1].startswith("font-big-shoulders-stencil-display-sc"))
-            self.assertTrue(short[2].endswith("4.9.3 ✓"))
-            self.assertTrue(short[2].startswith(" "))
+            self.assertTrue(short[2].startswith("4.9.3"))
+            self.assertTrue(short[2].endswith(" ✓"))
 
     def test_source_colors_and_english_types_preserve_alignment(self):
         with patch.dict(os.environ, MACTOOLS_LANG='zh', NO_COLOR='', TERM='xterm-256color'):
@@ -942,7 +943,8 @@ for row in rows:
                     colored = installed.selector_line(action, (32, 18)).split('\t')
                     present = packages.without_color(installed.selector_line(action, (32, 18))).split('\t')
                     absent = packages.without_color(missing.selector_line(action, (32, 18))).split('\t')
-                    self.assertTrue(present[6].endswith('4.9.3 ✓'))
+                    self.assertTrue(present[6].startswith('4.9.3'))
+                    self.assertTrue(present[6].endswith(' ✓'))
                     self.assertNotIn('✓', absent[6])
                     self.assertEqual(len(present[6]), len(absent[6]))
                     if not no_color:
@@ -953,6 +955,7 @@ for row in rows:
                         self.assertNotIn('\033[', '\t'.join(colored))
                     if action == 'update':
                         self.assertEqual(len(present[7]), len(absent[7]))
+                        self.assertTrue(present[7].startswith('5.0.0'))
                     self.assertEqual(packages.Row.parse('\t'.join(colored)), installed)
 
     def test_long_installed_versions_leave_room_for_check(self):
