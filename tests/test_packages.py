@@ -899,7 +899,7 @@ for row in rows:
         self.assertIn("--info=hidden", args)
         self.assertGreaterEqual(header.count("\n"), 2)
         self.assertIn("--with-nth=5..", args)
-        self.assertIn("--preview-window=right:30%:wrap:<50(down:35%:wrap)", args)
+        self.assertIn("--preview-window=right:30%:wrap:<30(down:35%:wrap)", args)
         for terminal_width in (160, 200):
             widths = packages.selector_widths("install", terminal_width)
             self.assertGreater(widths[0], 32)

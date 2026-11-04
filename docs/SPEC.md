@@ -35,7 +35,7 @@ maci、macu、macr 的列表快照只用于缩短首次显示时间。安装、�
 
 包选择器的名称列填充宽度最多 40 个终端字符，避免宽窗口中名称与版本相距过远；保留完整名称用于搜索。
 名称、已安装版本及可更新版本的表头与内容统一左对齐；绿色勾号紧跟版本号，末列不填充空格，更新列表仍对齐可更新版本。
-包选择器的右侧详情面板占宽度 30%；不足 50 字符时移到底部显示。
+包选择器的右侧详情面板占宽度 30%；不足 30 字符时才移到底部显示。
 
 bin/ma -> python3 bin/mactools.py。mactools.py 设置 MACTOOLS_LANG 并按功能导入模块。
 包功能模块 bin/mactools_packages.py: main(argv)，argv 包含 action install/remove/update。

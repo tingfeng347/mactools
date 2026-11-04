@@ -64,12 +64,12 @@ def clip_cell(value, width):
     return result + '…'
 
 
-def selector_widths(action, terminal_width=None, preview_percent=42):
+def selector_widths(action, terminal_width=None, preview_percent=42, preview_threshold=50):
     columns = terminal_width or shutil.get_terminal_size((120, 24)).columns
     inner = max(40, columns - 4)
     preview = int(inner * preview_percent / 100)
     # Match fzf's right preview and its narrow-window fallback below.
-    available = inner - preview - 4 if preview >= 50 else inner - 4
+    available = inner - preview - 4 if preview >= preview_threshold else inner - 4
     version_columns = 2 if action == "update" else 1
     version_width = 18
     # Keep versions beside the names instead of stretching to the list's edge.
@@ -177,7 +177,7 @@ class Row:
         # Keep canonical fields hidden for preview commands and selection validation.
         source = self.source
         current = clean(self.current) if self.current != "-" else text("未安装", "Not installed")
-        name_width, version_width = widths or selector_widths(action, preview_percent=30)
+        name_width, version_width = widths or selector_widths(action, preview_percent=30, preview_threshold=30)
         official = '/' not in self.name or self.name.startswith('homebrew/')
         kind = cell(source, 8)
         label = clean(self.display_name or self.name)
@@ -825,7 +825,7 @@ def select(queries, opts):
         raise ValueError(text('未找到 fzf，请先运行 brew install fzf', 'fzf not found. Run brew install fzf first'))
     query, exact = ' '.join(opts.query), opts.exact
     while True:
-        widths = selector_widths(opts.action, preview_percent=30)
+        widths = selector_widths(opts.action, preview_percent=30, preview_threshold=30)
         name_width, version_width = widths
         preview = shlex.join([sys.executable, str(Path(__file__).resolve()), '--preview', queries.brew, str(opts.timeout)]) + ' {1} {2}'
         headings = cell(text('类型', 'Type'), 8) + ' ' + cell(text('名称', 'Name'), name_width) + ' '
@@ -836,7 +836,7 @@ def select(queries, opts):
         argv = [fzf, '--ansi', '--multi', '--delimiter=\t', '--nth=2', '--with-nth=5..', '--tabstop=1',
                 '--print-query', '--expect=ctrl-e,ctrl-r', '--query=' + query,
                 '--height=95%', '--layout=reverse', '--border', '--tiebreak=index', '--info=hidden',
-                '--preview=' + preview, '--preview-window=right:30%:wrap:<50(down:35%:wrap)',
+                '--preview=' + preview, '--preview-window=right:30%:wrap:<30(down:35%:wrap)',
                 '--prompt=' + text('搜索 › ', 'Search › '),
                 '--bind=tab:toggle+down,shift-tab:toggle+up,ctrl-a:select-all,alt-j:last,alt-k:first,ctrl-/:toggle-preview',
                 '--header=' + header]
