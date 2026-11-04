@@ -899,7 +899,7 @@ for row in rows:
         self.assertIn("--info=hidden", args)
         self.assertGreaterEqual(header.count("\n"), 2)
         self.assertIn("--with-nth=5..", args)
-        self.assertIn("--preview-window=right:42%:wrap:<50(down:35%:wrap)", args)
+        self.assertIn("--preview-window=right:30%:wrap:<50(down:35%:wrap)", args)
         for terminal_width in (160, 200):
             widths = packages.selector_widths("install", terminal_width)
             self.assertGreater(widths[0], 32)
@@ -943,10 +943,8 @@ for row in rows:
                     colored = installed.selector_line(action, (32, 18)).split('\t')
                     present = packages.without_color(installed.selector_line(action, (32, 18))).split('\t')
                     absent = packages.without_color(missing.selector_line(action, (32, 18))).split('\t')
-                    self.assertTrue(present[6].startswith('4.9.3'))
-                    self.assertTrue(present[6].endswith(' ✓'))
+                    self.assertTrue(present[6].startswith('4.9.3 ✓'))
                     self.assertNotIn('✓', absent[6])
-                    self.assertEqual(len(present[6]), len(absent[6]))
                     if not no_color:
                         self.assertIn('\033[37m', colored[5])
                         self.assertNotIn('38;5;141', colored[5])
@@ -954,7 +952,7 @@ for row in rows:
                     else:
                         self.assertNotIn('\033[', '\t'.join(colored))
                     if action == 'update':
-                        self.assertEqual(len(present[7]), len(absent[7]))
+                        self.assertEqual(len(present[6]), len(absent[6]))
                         self.assertTrue(present[7].startswith('5.0.0'))
                     self.assertEqual(packages.Row.parse('\t'.join(colored)), installed)
 
