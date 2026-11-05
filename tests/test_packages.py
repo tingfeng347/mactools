@@ -38,7 +38,7 @@ if os.environ.get("SLOW_COMMAND") == args[0]:
     time.sleep(10)
 if args[:2] == ["list", "--versions"]:
     for name in args[3:]:
-        print(name, "3.0")
+        print(name, os.environ.get("BREW_LIST_VERSION", "3.0"))
 elif args[0] == "formulae":
     print("fzf\ngit\nowner/tools/tapped\n")
 elif args[0] == "casks":
@@ -208,7 +208,8 @@ class PackageTests(unittest.TestCase):
         for action, row, current in cases:
             with self.subTest(action=action):
                 snapshot = self.write_snapshot(action, [row])
-                self.assertEqual(self.invoke(action, '--yes')[0], 0)
+                with patch.dict(os.environ, BREW_LIST_VERSION=current):
+                    self.assertEqual(self.invoke(action, '--yes')[0], 0)
                 payload = json.loads(snapshot.read_text())
                 git = next(line for line in payload['rows'] if line.startswith('formula\tgit\t'))
                 self.assertEqual(packages.Row.parse(git).current, current)
@@ -290,6 +291,19 @@ class PackageTests(unittest.TestCase):
         packages.patch_selector_cache(queries, 'install', [packages.Row('formula', 'git', '-')])
         self.assertEqual(snapshot.read_bytes(), before)
         self.assertEqual(self.calls(), [])
+
+    def test_update_patch_refreshes_actual_cask_version(self):
+        snapshots = [self.write_snapshot(action, [packages.Row('cask', 'firefox', '100', '200')])
+                     for action in ('install', 'remove', 'update')]
+        metadata = {'casks': [{'token': 'firefox', 'installed': '200',
+                               'bundle_short_version': '250'}]}
+        with patch.dict(os.environ, BREW_INFO_JSON=json.dumps(metadata)):
+            queries = packages.Queries(str(self.brew), 2)
+            packages.patch_selector_cache(queries, 'update',
+                                          [packages.Row('cask', 'firefox', '100', '200')])
+        for snapshot in snapshots:
+            row = packages.Row.parse(json.loads(snapshot.read_text())['rows'][0])
+            self.assertEqual(row.current, '250')
 
     def test_unpatchable_selector_snapshot_falls_back_to_removal(self):
         snapshot = self.write_snapshot('remove', [packages.Row('formula', 'git', '1')])

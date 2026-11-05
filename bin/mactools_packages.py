@@ -663,6 +663,19 @@ def installed_selection_versions(queries, selected):
         names = wanted.get(source)
         if not names:
             continue
+        if source == 'cask':
+            inventory = json.loads(queries.capture('info', '--json=v2', '--cask', *names))
+            parsed = {}
+            for item in inventory_items(inventory, 'casks'):
+                token = package_name(item.get('full_token') or item.get('token'))
+                version = cask_installed_version(item)
+                parsed[cask_identity(queries.brew, token)] = version
+            for name in names:
+                version = parsed.get(cask_identity(queries.brew, name))
+                if not version or version == '-':
+                    raise ValueError(text('无法确认安装后的版本', 'Could not confirm the installed version'))
+                result[(source, name)] = version
+            continue
         output = queries.capture('list', '--versions', flag, *names)
         parsed = {}
         for line in output.splitlines():
@@ -725,7 +738,7 @@ def patch_selector_cache(queries, action, selected, removed_casks=()):
             if (not isinstance(rows, list) or not isinstance(apps, list)
                     or not isinstance(sources, list)):
                 raise ValueError('Invalid selector cache')
-            if action == 'install' and versions is None:
+            if action in ('install', 'update') and versions is None:
                 # One short local query, never a full inventory scan.
                 versions = installed_selection_versions(queries, selected)
             changed = False
@@ -752,9 +765,7 @@ def patch_selector_cache(queries, action, selected, removed_casks=()):
                     continue
                 if found is not None:
                     new_row = None
-                    if action == 'update' and found.target != '-':
-                        new_row = Row(row.source, row.name, found.target, row.target)
-                    elif action == 'install':
+                    if action in ('install', 'update'):
                         version = versions.get((found.source, found.name))
                         if version:
                             new_row = Row(row.source, row.name, version, row.target)
