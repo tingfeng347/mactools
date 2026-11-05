@@ -6,13 +6,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Python 3.9 has no Ubuntu 26.04 or macOS arm64 setup-python build.
-          - os: ubuntu-24.04
-            python: '3.9'
+          # Python 3.9 only has an Intel macOS setup-python build.
           - os: macos-15-intel
             python: '3.9'
-          - os: ubuntu-latest
-            python: '3.13'
           - os: macos-latest
             python: '3.13'
     runs-on: ${{ matrix.os }}
@@ -21,11 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: Install terminal test dependencies on Linux
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y zsh fzf fish
       - name: Install terminal test dependencies on macOS
-        if: runner.os == 'macOS'
         run: brew list fzf fish >/dev/null 2>&1 || brew install fzf fish
       - name: Validate launchers using system Bash
         run: |
