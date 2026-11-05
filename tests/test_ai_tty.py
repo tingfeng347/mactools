@@ -5,6 +5,7 @@ import pty
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 BIN = Path(__file__).resolve().parents[1] / 'bin'
@@ -74,6 +75,56 @@ else:
                                 stdin=subprocess.DEVNULL, capture_output=True,
                                 env=dict(os.environ, PYTHONPATH=str(BIN)), timeout=5)
         self.assertEqual(result.returncode, 0, result.stderr.decode())
+
+    def test_foreground_timeout_kills_children_and_restores_terminal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / 'orphan-ran'
+            pid, master = pty.fork()
+            if pid == 0:
+                try:
+                    os.execl(sys.executable, sys.executable, '-c', f'''import os, subprocess, sys
+sys.path.insert(0, {str(BIN)!r})
+from mactools_runtime import run
+tty = open('/dev/tty', 'r+b', buffering=0)
+try:
+    run(['/bin/sh', '-c', '(sleep 0.5; touch "$1") & sleep 30', '_', {str(marker)!r}], timeout=0.05,
+        stdin=tty, stdout=tty, stderr=tty)
+except subprocess.TimeoutExpired:
+    pass
+print(os.tcgetpgrp(tty.fileno()) == os.getpgrp())
+''')
+                finally:
+                    os._exit(1)
+            try:
+                os.set_blocking(master, False)
+                output = b''
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    try:
+                        output += os.read(master, 4096)
+                    except BlockingIOError:
+                        pass
+                    except OSError:
+                        break
+                    done, status = os.waitpid(pid, os.WNOHANG)
+                    if done:
+                        self.assertEqual(os.waitstatus_to_exitcode(status), 0)
+                        break
+                    time.sleep(0.02)
+                else:
+                    self.fail('terminal subprocess did not exit')
+                self.assertIn(b'True', output)
+                time.sleep(0.7)
+                self.assertFalse(marker.exists())
+            finally:
+                os.close(master)
+                try:
+                    pending = os.waitpid(pid, os.WNOHANG) == (0, 0)
+                except ChildProcessError:
+                    pending = False
+                if pending:
+                    os.kill(pid, 9)
+                    os.waitpid(pid, 0)
 
 
 if __name__ == '__main__':

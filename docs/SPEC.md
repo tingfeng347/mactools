@@ -47,4 +47,5 @@ macr 默认将黄色 app 排在 Homebrew cask/formula 前，明确类型选项�
 AI 模块 bin/mactools_ai.py: main(argv)，argv 不包含 ai。
 运行时 bin/mactools_runtime.py 提供 brew_path()/brew_env()/cache_dir()/config_dir()/state_dir()。
 main 返回退出状态整数；入口统一捕获 OSError/ValueError/TimeoutExpired/KeyboardInterrupt。
+共享 run 保留输入、输出捕获及 check 语义；超时或中断时回收整个子进程组。交互命令保留控制终端，结束后恢复前台进程组。
 每个功能模块只修改自身范围及独有测试文件；禁止真实安装/卸载机器软件或切源。
