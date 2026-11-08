@@ -105,7 +105,7 @@ Search and select packages: white names, right-aligned versions, and green `✓`
 
 **App removal with `macr`**: native apps appear first with yellow `app` labels. Press Enter to scan leftovers, then choose whether to clean them before confirming removal.
 
-![macr searching for CC Switch with one native row for the cask-managed app](images/remove-color.png)
+![macr searching for Google Chrome with native app and removal details](images/remove-color.png)
 
 **Disk cleanup with `macc`**: select Homebrew caches, unused dependencies, build output, and application caches; inspect the scope on the right.
 

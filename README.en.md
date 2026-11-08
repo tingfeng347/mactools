@@ -40,6 +40,14 @@ mato                         # Monitor resources and manage processes
 
 ![maci searching for fish with installed versions and package details](docs/images/install-status.png)
 
+**App removal and leftover cleanup**
+
+![macr searching for Google Chrome with native app and removal details](docs/images/remove-color.png)
+
+**System optimization**
+
+![maco optimization selector showing available tasks, scope, and required permissions](docs/images/optimize-color.png)
+
 **Live resource and process monitoring**
 
 ![mato showing CPU, GPU, memory, disk, network, and processes sorted by memory](docs/images/top-color.png)

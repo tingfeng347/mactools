@@ -2,8 +2,9 @@
 """Render README terminal demos on macOS (development deps: pillow, pyte).
 
 Use --capture to open each current selector in a private pseudo-terminal and
-exit without accepting a selection. --only help install top refreshes README's
-three screenshots. No installations, removals, or cleanup actions are executed.
+exit without accepting a selection. --only help install remove optimize top
+refreshes README's five screenshots. No installations, removals, or cleanup
+actions are executed.
 Without --capture, render existing .reference/*.typescript recordings.
 """
 
@@ -21,7 +22,7 @@ OUTPUT = ROOT / 'docs' / 'images'
 COLS, ROWS = 160, 35
 DEMOS = (
     ('install', 'install-status.png', ['maci', '--dry-run', '--formula', '--exact', 'fish'], 'maci fish'),
-    ('remove', 'remove-color.png', ['macr', '--dry-run', '--exact', 'switch'], 'macr switch'),
+    ('remove', 'remove-color.png', ['macr', '--dry-run', '--exact', 'chrome'], 'macr chrome'),
     ('clean', 'clean-color.png', ['macc', '--dry-run'], 'ma clean'),
     ('optimize', 'optimize-color.png', ['maco'], 'ma optimize'),
     ('ai', 'ai-color.png', ['maca', 'install', '--dry-run'], 'ma ai'),

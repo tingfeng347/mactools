@@ -105,7 +105,7 @@ curl -fsSL https://raw.githubusercontent.com/tingfeng347/mactools/main/uninstall
 
 **应用卸载 `macr`**：本机应用使用黄色 `app` 标识并置顶；按 Enter 后扫描残留，再选择是否清理并确认卸载。
 
-![macr 搜索 CC Switch，cask 管理的应用只保留一条本机应用记录](images/remove-color.png)
+![macr 搜索 Google Chrome，展示本机应用及卸载详情](images/remove-color.png)
 
 **空间清理 `macc`**：选择 Homebrew 缓存、无用依赖、构建产物与应用缓存，右侧查看影响范围。
 

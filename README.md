@@ -40,6 +40,14 @@ mato                         # 实时监控与进程管理
 
 ![maci 搜索 fish，显示已安装版本和软件详情](docs/images/install-status.png)
 
+**应用卸载与残留清理**
+
+![macr 搜索 Google Chrome，展示本机应用及卸载详情](docs/images/remove-color.png)
+
+**系统优化**
+
+![maco 系统优化界面，展示可选任务、影响范围与所需权限](docs/images/optimize-color.png)
+
 **实时资源监控与进程管理**
 
 ![mato 显示 CPU、GPU、内存、磁盘、网络与按内存排序的进程列表](docs/images/top-color.png)
