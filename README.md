@@ -5,7 +5,7 @@
 <h1 align="center">mactools</h1>
 
 <p align="center">
-  <strong>macOS 终端工具集 — 软件管理、应用卸载、空间清理与系统优化</strong>
+  <strong>macOS 终端工具集 — 软件管理、应用卸载、空间清理、系统优化与实时监控</strong>
 </p>
 
 <p align="center">
@@ -20,7 +20,7 @@
   <strong>简体中文</strong> · <a href="README.en.md">English</a>
 </p>
 
-使用 `ma + 动作` 和 `maci` 等快捷命令，统一管理 Homebrew、本机应用与残留、空间清理、系统优化、镜像源和 AI 编程工具。
+使用 `ma + 动作` 和 `maci` 等快捷命令，统一管理 Homebrew、本机应用与残留、空间清理、系统优化、镜像源、AI 编程工具与实时资源监控。
 
 ```bash
 ma install firefox
@@ -29,9 +29,20 @@ macr                         # 应用及残留卸载
 macc                         # 空间清理
 maco                         # 系统优化
 ma ai install --all --dry-run
+mato                         # 实时监控与进程管理
 ```
 
+**命令总览**
+
+![ma 帮助列表，包含实时监控命令 mato](docs/images/commands-color.png)
+
+**搜索与安装软件**
+
 ![maci 搜索 fish，显示已安装版本和软件详情](docs/images/install-status.png)
+
+**实时资源监控与进程管理**
+
+![mato 显示 CPU、GPU、内存、磁盘、网络与按内存排序的进程列表](docs/images/top-color.png)
 
 ## 安装与卸载
 
@@ -70,12 +81,14 @@ bash uninstall.sh
 | 刷新缓存与服务、系统优化 | `ma optimize` | `maco` |
 | 镜像源测速、切换和恢复 | `ma mirror` | `macm` |
 | AI 编程工具管理 | `ma ai` | `maca` |
+| 实时资源监控与进程管理 | `ma top` | `mato` |
 
 运行 `ma --help` 或 `ma help <命令>` 查看选项。
 
 ## 文档
 
 - [使用说明](docs/USAGE.md)：安装细节、搜索与选择、卸载与残留、清理范围、系统优化、镜像源、AI 工具、Shell 补全
+- [实时监控](docs/TOP.md)：快捷键、过滤、指标口径与性能验证
 - [功能规格](docs/SPEC.md)
 - [Mole 接入说明](docs/MOLE.md)
 - [审查报告](docs/REVIEW.md)

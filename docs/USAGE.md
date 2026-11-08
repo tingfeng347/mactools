@@ -136,6 +136,7 @@ curl -fsSL https://raw.githubusercontent.com/tingfeng347/mactools/main/uninstall
 | 刷新缓存与服务、系统优化 | `ma optimize` | `maco` |
 | 镜像源测速、切换和恢复 | `ma mirror` | `macm` |
 | AI 编程工具管理 | `ma ai` | `maca` |
+| 实时资源监控与进程管理 | `ma top` | `mato` |
 
 ```bash
 ma --help
@@ -390,3 +391,15 @@ python3 -m unittest discover -s tests -v
 测试使用临时目录、假包管理器、本地 HTTP 服务和伪终端；不会安装、更新或卸载宿主机上的实际软件。本地回归检查覆盖真实 fzf 的名称过滤和清理绑定。CI 在 macOS 和 Linux 上分别验证 Python 3.9 / 3.13，安装器生命周期测试仅在 macOS 运行；远端结果见顶部 CI 徽章。
 
 macOS 适配依据：[Homebrew 命令文档](https://docs.brew.sh/Manpage)、[Homebrew JSON 接口](https://docs.brew.sh/Querying-Brew)、[清华 bottle 镜像](https://mirrors.tuna.tsinghua.edu.cn/help/homebrew-bottles/)、[中科大 bottle 镜像](https://mirrors.ustc.edu.cn/help/homebrew-bottles.html)。
+
+## 实时监控与进程管理
+
+```bash
+mato
+ma top --sort memory
+mato --search chrome --min-memory 500MiB
+mato --theme nord --interval 2
+mato --json --samples 2
+```
+
+`/` 搜索名称、PID 和权限允许读取的命令；`f` 设置 RSS 内存上下限与用户；`m`/`c` 按内存/CPU 排序；`Enter` 查看详情；`k` 请求结束，`K` 强制结束，均需要确认。`t` 切换主题，`Tab` 在窄屏切换概览与进程，`?` 查看全部快捷键。源码目录直接运行 `./bin/mato`。完整指标口径、GPU 限制与性能验证见 [实时监控说明](TOP.md)。

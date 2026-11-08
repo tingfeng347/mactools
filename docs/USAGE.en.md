@@ -136,6 +136,7 @@ Search and select packages: white names, right-aligned versions, and green `✓`
 | Refresh caches and services, optimize system | `ma optimize` | `maco` |
 | Benchmark, switch, and restore mirrors | `ma mirror` | `macm` |
 | Manage AI coding tools | `ma ai` | `maca` |
+| Monitor resources and manage processes | `ma top` | `mato` |
 
 ```bash
 ma --help
@@ -390,3 +391,15 @@ python3 -m unittest discover -s tests -v
 Tests use temporary directories, fake package managers, local HTTP servers, and pseudo-terminals without installing, updating, or removing actual host software. Local regression checks cover real fzf name filtering and cleanup bindings. CI checks Python 3.9 and 3.13 on macOS and Linux; installer lifecycle tests run only on macOS. See the CI badge above for remote results.
 
 macOS adaptation references: [Homebrew commands](https://docs.brew.sh/Manpage), [Homebrew JSON API](https://docs.brew.sh/Querying-Brew), [Tsinghua bottle mirror](https://mirrors.tuna.tsinghua.edu.cn/help/homebrew-bottles/), and [USTC bottle mirror](https://mirrors.ustc.edu.cn/help/homebrew-bottles.html).
+
+## Live resource and process monitoring
+
+```bash
+mato
+ma top --sort memory
+mato --search chrome --min-memory 500MiB
+mato --theme nord --interval 2
+mato --json --samples 2
+```
+
+Use `/` to search names, PIDs and readable commands, `f` to filter RSS/user, `m`/`c` to sort memory/CPU, Enter for details, `k` to terminate and `K` to force kill (both require confirmation). Use `t` for themes, Tab for narrow-screen pages and `?` for shortcuts. Run `./bin/mato` from a source checkout. See [metric definitions and verification](TOP.md).

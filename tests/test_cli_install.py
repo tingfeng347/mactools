@@ -5,6 +5,7 @@ import re
 import select
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -43,9 +44,18 @@ class CLI(unittest.TestCase):
                         env = dict(self.env, MACTOOLS_LANG=lang, TERM=term, NO_COLOR=no_color)
                         process = subprocess.Popen([str(ROOT / 'bin/ma')], env=env, stdout=slave,
                                                    stderr=subprocess.PIPE)
-                        process.communicate(timeout=20)
                         data = bytearray()
-                        while select.select([master], [], [], 0.2)[0]:
+                        deadline = time.monotonic() + 20
+                        while True:
+                            ready = select.select([master], [], [], 0.05)[0]
+                            if not ready:
+                                if process.poll() is not None:
+                                    break
+                                if time.monotonic() >= deadline:
+                                    process.kill()
+                                    process.communicate(timeout=5)
+                                    self.fail('help command did not finish')
+                                continue
                             try:
                                 chunk = os.read(master, 65536)
                             except OSError:
@@ -53,6 +63,7 @@ class CLI(unittest.TestCase):
                             if not chunk:
                                 break
                             data.extend(chunk)
+                        process.communicate(timeout=5)
                         output = data.decode().replace('\r\n', '\n')
                         self.assertEqual(process.returncode, 0)
                         self.assertEqual('\033[' in output, expected)
@@ -76,7 +87,7 @@ class CLI(unittest.TestCase):
     def test_all_shortcuts_match_dispatcher_help(self):
         for alias, action in {'maci':'install', 'macr':'remove', 'macu':'update',
                               'macd':'doctor', 'macc':'clean', 'maco':'optimize',
-                              'macm':'mirror', 'maca':'ai'}.items():
+                              'macm':'mirror', 'maca':'ai', 'mato':'top'}.items():
             with self.subTest(alias=alias):
                 full = self.invoke(action, '--help')
                 short = self.invoke('--help', executable=ROOT / 'bin' / alias)
@@ -101,6 +112,8 @@ class CLI(unittest.TestCase):
             self.assertEqual(result.returncode, 0)
             self.assertIn('maci', result.stdout)
             self.assertIn('maco', result.stdout)
+            self.assertIn('mato', result.stdout)
+            self.assertIn('min-memory', result.stdout)
             self.assertIn('network-optimization', result.stdout)
             self.assertIn('refresh-index', result.stdout)
             self.assertIn('config-dir', result.stdout)
@@ -131,6 +144,8 @@ class Install(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(os.access(target / 'maci', os.X_OK))
         self.assertTrue(os.access(target / 'maco', os.X_OK))
+        self.assertTrue(os.access(target / 'mato', os.X_OK))
+        self.assertEqual(self.invoke('--help', executable=target / 'mato').returncode, 0)
         self.assertEqual(self.invoke('--version', executable=target / 'ma').returncode, 0)
         clean = self.invoke('clean', '--dev', '--generate', executable=target / 'ma')
         self.assertEqual(clean.returncode, 0, clean.stderr)
@@ -155,6 +170,10 @@ class Install(unittest.TestCase):
         self.assertFalse((target / 'mactools_mole.zip').exists())
         self.assertFalse((target / 'mactools_optimize.py').exists())
         self.assertFalse((target / 'maco').exists())
+        self.assertFalse((target / 'mato').exists())
+        self.assertFalse((target / 'mactools_top.py').exists())
+        self.assertFalse((target / 'mactools_top_native.py').exists())
+        self.assertFalse((target / 'mactools_top_ui.py').exists())
         self.assertEqual((target / 'unrelated').read_text(), 'preserve')
         self.assertEqual(marker.read_text(), 'en\n')
 

@@ -1,0 +1,21 @@
+{
+  "duration_seconds": 60,
+  "dimensions": "160x44",
+  "rss_mib_min": 23.859375,
+  "rss_mib_max": 24.34375,
+  "rss_mib_first": 23.859375,
+  "rss_mib_last": 24.34375,
+  "cpu_one_core_percent_average": 1.6230320651885033,
+  "keyboard_ms": [
+    2.795791999993469,
+    4.670125000004077,
+    4.2427500000030705,
+    4.270542000000432,
+    3.383667000001367
+  ],
+  "keyboard_ms_max": 4.670125000004077,
+  "included_child_pids": [],
+  "python": "3.9.6",
+  "machine": "arm64",
+  "scope": "main process plus descendants; real curses UI"
+}

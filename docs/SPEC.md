@@ -1,6 +1,6 @@
 # mactools 功能与开发规格
 
-入口 ma，缩写 maci/macr/macu/macd/macc/maco/macm/maca。maci = ma install。
+入口 ma，缩写 maci/macr/macu/macd/macc/maco/macm/maca/mato。maci = ma install。
 Python 3.9+ 标准库，启动器兼容系统 Bash 3.2；支持 Intel 和 Apple Silicon 的 brew 路径。
 包源为 Homebrew formula/cask，--brew 是 --formula 别名，不保留无效 apt/snap/flatpak 参数。
 执行包管理器时不使用 sudo；默认不自动刷新索引，update --refresh-index 才显式 brew update。
@@ -51,3 +51,7 @@ AI 模块 bin/mactools_ai.py: main(argv)，argv 不包含 ai。
 运行时 bin/mactools_runtime.py 提供 brew_path()/brew_env()/cache_dir()/config_dir()/state_dir()。
 main 返回退出状态整数；入口统一捕获 OSError/ValueError/TimeoutExpired/KeyboardInterrupt。
 每个功能模块只修改自身范围及独有测试文件；禁止真实安装/卸载机器软件或切源。
+
+## 实时资源监控
+
+`ma top` / `mato` 由 `mactools_top.py` 调度，`mactools_top_native.py` 采集，`mactools_top_ui.py` 绘制。具体行为、指标口径和性能证据维护在 [TOP.md](TOP.md)。使用 Python 标准库，macmon 为可选外部采集器；不自动安装依赖或提升权限。

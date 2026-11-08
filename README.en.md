@@ -5,7 +5,7 @@
 <h1 align="center">mactools</h1>
 
 <p align="center">
-  <strong>A macOS terminal toolkit — packages, app removal, cleanup, and system optimization</strong>
+  <strong>A macOS terminal toolkit — packages, app removal, cleanup, optimization, and live monitoring</strong>
 </p>
 
 <p align="center">
@@ -20,7 +20,7 @@
   <a href="README.md">简体中文</a> · <strong>English</strong>
 </p>
 
-Use `ma` with an action, or shortcuts such as `maci`, to manage Homebrew packages, native apps and leftovers, disk cleanup, system optimization, mirrors, and AI coding tools.
+Use `ma` with an action, or shortcuts such as `maci`, to manage Homebrew packages, native apps and leftovers, disk cleanup, system optimization, mirrors, AI coding tools, and live resource monitoring.
 
 ```bash
 ma install firefox
@@ -29,9 +29,20 @@ macr                         # Remove apps and leftovers
 macc                         # Clean up disk space
 maco                         # Optimize the system
 ma ai install --all --dry-run
+mato                         # Monitor resources and manage processes
 ```
 
+**Command overview**
+
+![ma help including the mato live monitor](docs/images/commands-color.png)
+
+**Search and install packages**
+
 ![maci searching for fish with installed versions and package details](docs/images/install-status.png)
+
+**Live resource and process monitoring**
+
+![mato showing CPU, GPU, memory, disk, network, and processes sorted by memory](docs/images/top-color.png)
 
 ## Install and uninstall
 
@@ -70,12 +81,14 @@ To check the installation method, run `command -v ma`: if it points to `~/.local
 | Refresh caches and services, system optimization | `ma optimize` | `maco` |
 | Benchmark, switch, and restore mirrors | `ma mirror` | `macm` |
 | Manage AI coding tools | `ma ai` | `maca` |
+| Monitor resources and manage processes | `ma top` | `mato` |
 
 Run `ma --help` or `ma help <command>` for options.
 
 ## Documentation
 
 - [Usage guide](docs/USAGE.en.md): install details, search and selection, removal and leftovers, cleanup scopes, optimization, mirrors, AI tools, shell completion
+- [Live monitoring](docs/TOP.md): shortcuts, filters, metric definitions, and performance verification
 - [Functional specification](docs/SPEC.md)
 - [Mole integration notes](docs/MOLE.md)
 - [Review report](docs/REVIEW.md)

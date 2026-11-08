@@ -1,0 +1,22 @@
+{
+  "duration_seconds": 30,
+  "dimensions": "160x44",
+  "rss_mib_min": 24.09375,
+  "rss_mib_max": 24.375,
+  "rss_mib_first": 24.09375,
+  "rss_mib_last": 24.375,
+  "cpu_one_core_percent_average": 0.6989304351914805,
+  "keyboard_ms": [
+    0.848957999998845,
+    0.8319169999992937,
+    0.8061249999968823,
+    0.6799159999957283,
+    0.6916660000015895
+  ],
+  "keyboard_ms_max": 0.848957999998845,
+  "included_child_pids": [],
+  "python": "3.9.6",
+  "machine": "arm64",
+  "term": "xterm-kitty",
+  "scope": "main process plus descendants; real curses UI"
+}

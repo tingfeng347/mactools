@@ -16,6 +16,7 @@ VERSION = "0.1.17"
 COMMANDS = {
     "install": "maci", "remove": "macr", "update": "macu", "doctor": "macd",
     "clean": "macc", "optimize": "maco", "mirror": "macm", "ai": "maca",
+    "top": "mato",
 }
 
 
@@ -40,6 +41,7 @@ def help_text():
   optimize  刷新系统缓存与服务，检查系统状态 (maco)
   mirror    镜像测速、切换与恢复 (macm)
   ai        AI 编程工具管理 (maca)
+  top       实时资源监控与进程管理 (mato)
   setup     设置语言：ma setup zh|en
   completion  输出 bash|zsh|fish 补全
 
@@ -54,6 +56,7 @@ def help_text():
   optimize  Refresh system caches and services, review system health (maco)
   mirror    Benchmark, switch and restore mirrors (macm)
   ai        Manage AI coding tools (maca)
+  top       Monitor resources and manage processes (mato)
   setup     Set language: ma setup zh|en
   completion  Print bash|zsh|fish completion
 
@@ -66,12 +69,13 @@ Run ma <command> --help for command help.""")
         return f"\033[{code}m{value}\033[0m"
 
     lines = output.splitlines()
+    shortcut_pattern = r"\((" + "|".join(re.escape(alias) for alias in COMMANDS.values()) + r")\)"
     for index, line in enumerate(lines):
         if index == 0:
             lines[index] = paint(line, "1;36")
         elif line.startswith("  "):
             line = re.sub(r"^(  )(\w+)", lambda m: m[1] + paint(m[2], "1;32"), line)
-            lines[index] = re.sub(r"\((mac\w+)\)", lambda m: "(" + paint(m[1], "33") + ")", line)
+            lines[index] = re.sub(shortcut_pattern, lambda m: "(" + paint(m[1], "33") + ")", line)
         elif line.startswith(("示例：", "Examples:")):
             lines[index] = paint(line, "36")
         elif line:
@@ -94,7 +98,7 @@ def completion(shell):
     action="${COMP_WORDS[1]:-}"
     case "${COMP_WORDS[0]##*/}" in
         maci) action=install;; macr) action=remove;; macu) action=update;;
-        macd) action=doctor;; macc) action=clean;; maco) action=optimize;; macm) action=mirror;; maca) action=ai;;
+        macd) action=doctor;; macc) action=clean;; maco) action=optimize;; macm) action=mirror;; maca) action=ai;; mato) action=top;;
     esac
     words="--help"
     case "$action" in
@@ -104,6 +108,7 @@ def completion(shell):
         optimize) words="''' + optimize_actions + ''' --list --dry-run --yes --timeout --help";;
         mirror) words="test auto restore --json --mirror --timeout --limit --dry-run --yes --force --config-dir --state-dir --help";;
         ai) words="install remove uninstall update status doctor codex claude opencode pi qodercn gemini qwen zcode --all --path --dry-run --yes --check --latest --offline --timeout --help";;
+        top) words="--sort --search --min-memory --max-memory --user --theme --interval --interface --disk --no-macmon --json --samples --help";;
         setup) words="zh en --help";;
         completion) words="bash zsh fish";;
     esac
@@ -114,7 +119,7 @@ def completion(shell):
     [[ "$action" == remove ]] && words="$words --apps --app-data --clean-leftovers --keep-leftovers --scan-timeout"
     COMPREPLY=( $(compgen -W "$words" -- "$cur") )
 }
-complete -F _mactools_complete ma maci macr macu macd macc maco macm maca''')
+complete -F _mactools_complete ma maci macr macu macd macc maco macm maca mato''')
     elif shell == "zsh":
         print('''_mactools_complete() {
     local -a candidates
@@ -122,6 +127,7 @@ complete -F _mactools_complete ma maci macr macu macd macc maco macm maca''')
         ma:setup) candidates=(zh en);;
         ma:completion) candidates=(bash zsh fish);;
         ma:ai|maca:*) candidates=(install remove uninstall update status doctor codex claude opencode pi qodercn gemini qwen zcode --all --path --dry-run --yes --check --latest --offline --timeout --help);;
+        ma:top|mato:*) candidates=(--sort --search --min-memory --max-memory --user --theme --interval --interface --disk --no-macmon --json --samples --help);;
         ma:mirror|macm:*) candidates=(test auto restore --json --mirror --timeout --limit --dry-run --yes --force --config-dir --state-dir --help);;
         ma:doctor|macd:*) candidates=(--formula --brew --cask --offline --timeout --help);;
         ma:clean|macc:*) candidates=(''' + clean_actions + ''' --formula --brew --cask --dev --exact --list --dry-run --yes --timeout --help);;
@@ -135,7 +141,7 @@ complete -F _mactools_complete ma maci macr macu macd macc maco macm maca''')
     if [[ ${words[1]:t} == macr || ( ${words[1]:t} == ma && ${words[2]} == remove ) ]]; then candidates+=(--apps --app-data --clean-leftovers --keep-leftovers --scan-timeout); fi
     compadd -- "${candidates[@]}"
 }
-compdef _mactools_complete ma maci macr macu macd macc maco macm maca''')
+compdef _mactools_complete ma maci macr macu macd macc maco macm maca mato''')
     elif shell == "fish":
         print('complete -c ma -f')
         print(f"complete -c ma -n '__fish_use_subcommand' -a '{actions}'")
@@ -150,6 +156,7 @@ compdef _mactools_complete ma maci macr macu macd macc maco macm maca''')
             "optimize": "list dry-run yes timeout help",
             "mirror": "json mirror timeout limit dry-run yes force config-dir state-dir help",
             "ai": "all path dry-run yes check latest offline timeout help",
+            "top": "sort search min-memory max-memory user theme interval interface disk no-macmon json samples help",
         }
         for action, alias in COMMANDS.items():
             print(f"complete -c {alias} -f")

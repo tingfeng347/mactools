@@ -1,0 +1,29 @@
+--- a/Formula/mactools.rb
++++ b/Formula/mactools.rb
+@@ -15,7 +15,7 @@
+   def install
+     libexec.install "bin"
+     (libexec/"python-bin").install_symlink formula_opt_bin("python@3.14")/"python3.14" => "python3"
+-    commands = %w[ma maci macr macu macd macc maco macm maca]
++    commands = %w[ma maci macr macu macd macc maco macm maca mato]
+     commands.each do |command|
+       (bin/command).write_env_script libexec/"bin"/command,
+                                      PATH: "#{libexec}/python-bin:#{formula_opt_bin("fzf")}:$PATH"
+@@ -40,6 +40,8 @@
+     assert_path_exists libexec/"bin/mactools_mole.zip"
+     assert_path_exists libexec/"bin/mactools_apps.py"
+     assert_path_exists libexec/"bin/mactools_optimize.py"
++    assert_path_exists libexec/"bin/mactools_top.py"
++    assert_match "--min-memory", shell_output("#{bin}/mato --help")
+     assert_match "--list-json", (libexec/"bin/mactools_packages.py").read
+     assert_match "--pick", (libexec/"bin/mactools_packages.py").read
+     assert_match "browser-cache", shell_output("#{bin}/ma clean --exact browser-cache --list")
+@@ -47,7 +49,7 @@
+     assert_match "--apps", shell_output("#{bin}/macr --help")
+     assert_match "--scan-timeout", shell_output("#{bin}/macr --help")
+     assert_match "--clean-leftovers", shell_output("#{bin}/macr --help")
+-    %w[maci macr macu macd macc maco macm maca].each do |command|
++    %w[maci macr macu macd macc maco macm maca mato].each do |command|
+       assert_match "--help", shell_output("#{bin}/#{command} --help")
+     end
+     %w[bash zsh fish].each do |shell|

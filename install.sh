@@ -32,7 +32,7 @@ install_mactools() {
     script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
     stage="$(mktemp -d "${TMPDIR:-/tmp}/mactools-install.XXXXXX")"
     trap "rm -rf -- $(printf '%q' "$stage")" EXIT
-    local files=(ma maci macr macu macd macc maco macm maca mactools.py mactools_runtime.py mactools_packages.py mactools_apps.py mactools_system.py mactools_cleanup.py mactools_mole.py mactools_mole.zip mactools_mirror.py mactools_ai.py mactools_optimize.py)
+    local files=(ma maci macr macu macd macc maco macm maca mato mactools.py mactools_runtime.py mactools_packages.py mactools_apps.py mactools_system.py mactools_cleanup.py mactools_mole.py mactools_mole.zip mactools_mirror.py mactools_ai.py mactools_optimize.py mactools_top.py mactools_top_native.py mactools_top_ui.py)
     local local_ready=true
     for file in "${files[@]}"; do
         [[ -s "$script_dir/bin/$file" ]] || local_ready=false
@@ -126,7 +126,7 @@ PY
     if [[ "$dry_run" == true ]]; then
         echo 'Preview complete; no installation files changed.'
     else
-        printf 'Commands: ma install / maci, macr, macu, macd, macc, maco, macm, maca\n'
+        printf 'Commands: ma install / maci, macr, macu, macd, macc, maco, macm, maca, mato\n'
         printf 'Add this directory to PATH if needed: %s\n' "$bin_dir"
         echo 'Interactive package selection requires fzf: brew install fzf'
     fi
