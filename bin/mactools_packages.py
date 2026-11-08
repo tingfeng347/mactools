@@ -714,8 +714,14 @@ def patch_selector_cache(queries, action, selected, removed_casks=()):
             payload = json.loads(path.read_text())
             if not isinstance(payload, dict):
                 raise ValueError('Invalid selector cache')
-            if payload.get('brew') != queries.brew:
+            snapshot_brew = payload.get('brew')
+            same_brew = snapshot_brew == queries.brew
+            # Native removal may use --apps (no current brew) or an app owned
+            # by a different prefix. Match its cask against each snapshot owner.
+            if not same_brew and not (action == 'remove' and app_keys):
                 continue
+            if not isinstance(snapshot_brew, str):
+                raise ValueError('Invalid selector cache Homebrew')
             stamp = payload.get('time')
             if (not isinstance(stamp, (int, float)) or not math.isfinite(stamp)
                     or not 0 <= now - stamp < SELECTOR_CACHE_SECONDS):
@@ -735,11 +741,13 @@ def patch_selector_cache(queries, action, selected, removed_casks=()):
                 row = Row.parse(line)
                 if row.line() != line:
                     raise ValueError('Invalid selector cache row')
-                found = (cask_keys.get(cask_identity(queries.brew, row.name))
-                         if row.source == 'cask' else brew_keys.get((row.source, row.name)))
+                if row.source == 'cask':
+                    found = cask_keys.get(cask_identity(snapshot_brew, row.name))
+                else:
+                    found = brew_keys.get((row.source, row.name)) if same_brew else None
                 removed = action == 'remove' and found is not None
                 if (row.source == 'cask'
-                        and cask_identity(queries.brew, row.name) in removed_cask_ids):
+                        and cask_identity(snapshot_brew, row.name) in removed_cask_ids):
                     removed = True
                 if removed:
                     changed = True

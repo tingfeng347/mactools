@@ -280,6 +280,36 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(json.loads(snapshot.read_text())['rows'], [])
         self.assertEqual(self.mutations(), [])
 
+    def test_native_uninstall_updates_snapshots_for_owning_homebrew(self):
+        app = packages.Row('app', 'app-' + 'e' * 64, '120', display_name='Firefox')
+        cask = packages.Row('cask', 'homebrew/cask/firefox', '120')
+        other = packages.Row('cask', 'owner/tap/firefox', '119')
+        formula = packages.Row('formula', 'git', '1')
+        for selected_brew in ('', str(self.root / 'other-brew')):
+            with self.subTest(selected_brew=selected_brew):
+                snapshots = {action: self.write_snapshot(action, [cask, other, formula], apps=[app])
+                             for action in ('install', 'remove', 'update')}
+                with patch('mactools_apps.resolve_apps', return_value=['resolved']), \
+                     patch('mactools_apps.AppUninstallPlan') as factory:
+                    factory.return_value.cask_identities = {(str(self.brew), 'firefox')}
+                    factory.return_value.apply.return_value = 0
+                    opts = packages.parser().parse_args(['remove', '--apps', '--yes'])
+                    queries = packages.Queries(selected_brew, 15)
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        status = packages.execute_selection(selected_brew, queries, opts, [app])
+                self.assertEqual(status, 0)
+                for action, snapshot in snapshots.items():
+                    payload = json.loads(snapshot.read_text())
+                    result = [packages.Row.parse(line) for line in payload['rows']]
+                    self.assertEqual(payload['apps'], [])
+                    self.assertIn(other, result)
+                    self.assertIn(formula, result)
+                    if action == 'install':
+                        self.assertIn(packages.Row('cask', cask.name, '-'), result)
+                    else:
+                        self.assertNotIn(cask, result)
+        self.assertEqual(self.mutations(), [])
+
     def test_expired_selector_snapshot_is_not_patched_or_queried(self):
         snapshot = self.write_snapshot('remove', [packages.Row('formula', 'git', '1')])
         payload = json.loads(snapshot.read_text())

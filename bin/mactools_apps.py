@@ -186,10 +186,16 @@ def _cask_owners(selected, timeout):
             # prove ownership and are only a cheap prefilter.
             installed = re.sub(r'\x1b\[[0-9;]*m', '',
                                _brew_capture(brew, ['list', '--cask', token], timeout)).splitlines()
+            # Non-TTY Homebrew lists raw Caskroom paths. App artifacts there
+            # are symlinks to the installed bundle; resolve them before matching.
+            installed_paths = {os.path.realpath(os.path.expanduser(line))
+                               for line in installed
+                               if line.startswith(('/', '~/')) and line.endswith('.app')}
             for app in selected:
                 displays = (app.path, '~/' + os.path.relpath(app.path, str(Path.home())))
-                if not any(line.startswith(display + ' (') and line.endswith(')')
-                           for line in installed for display in displays):
+                if (os.path.realpath(app.path) not in installed_paths
+                        and not any(line.startswith(display + ' (') and line.endswith(')')
+                                    for line in installed for display in displays)):
                     continue
                 identity = (brew, token)
                 if app.path in owners and owners[app.path] != identity:

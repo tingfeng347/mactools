@@ -22,6 +22,35 @@ sys.path.insert(0, str(ROOT / 'bin'))
 import mactools_apps as apps
 
 
+class CaskPathOwnership(unittest.TestCase):
+    def test_plain_caskroom_paths_resolve_to_the_installed_app(self):
+        with tempfile.TemporaryDirectory(prefix='ma-cask-owner-') as folder:
+            root = Path(folder)
+            path = root / 'Applications/Editor.app'
+            path.mkdir(parents=True)
+            app = apps._app(str(path))
+            link = root / 'Caskroom/editor/1/Editor.app'
+            link.parent.mkdir(parents=True)
+            link.symlink_to(path)
+            record = {'token': 'editor', 'full_token': 'owner/tap/editor',
+                      'artifacts': [{'app': ['Editor.app'], 'target': str(path)}]}
+            brew = str(root / 'brew')
+            for output in (str(link) + '\n', str(path) + ' (12 files, 1MB)\n'):
+                with self.subTest(output=output), \
+                     patch.object(apps, '_brew_candidates', return_value=[brew]), \
+                     patch.object(apps, '_brew_capture', side_effect=[
+                         json.dumps({'casks': [record]}), output]):
+                    self.assertEqual(apps._cask_owners([app], 5),
+                                     {str(path): (brew, 'owner/tap/editor')})
+            # A same-name bundle elsewhere does not prove ownership.
+            other = root / 'Other/Editor.app'
+            other.mkdir(parents=True)
+            with patch.object(apps, '_brew_candidates', return_value=[brew]), \
+                 patch.object(apps, '_brew_capture', side_effect=[
+                     json.dumps({'casks': [record]}), str(other) + '\n']):
+                self.assertEqual(apps._cask_owners([app], 5), {})
+
+
 class AppIdentity(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix='ma-app-id-')
@@ -366,11 +395,17 @@ ma_apps_main "$@"
 
     def test_cask_apply_invokes_exact_prefix_and_full_token(self):
         path = self.app()
+        artifact = self.home / 'Caskroom/fixture/1/测试 App.app'
+        artifact.parent.mkdir(parents=True)
+        artifact.symlink_to(path)
         brew = self.home / 'bin' / 'owning-brew'
         brew.parent.mkdir()
         brew.write_text('''#!/bin/bash
 set -eu
 case "$1" in
+    info)
+        printf '%s\\n' '{"casks":[{"token":"fixture","full_token":"owner/tap/fixture","artifacts":[{"app":["测试 App.app"]}]}]}'
+        ;;
     uninstall)
         [[ "$*" == 'uninstall --cask owner/tap/fixture' ]] || exit 4
         printf '%s\\n' "$@" > "$HOME/cask-command"
@@ -378,13 +413,18 @@ case "$1" in
         /bin/mv "$HOME/Applications/测试 App.app" "$HOME/.Trash/cask-fixture"
         ;;
     list)
-        [[ ! -e "$HOME/Applications/测试 App.app" ]] || echo owner/tap/fixture
+        if [[ "$*" == 'list --cask owner/tap/fixture' ]]; then
+            printf '%s\\n' "$HOME/Caskroom/fixture/1/测试 App.app"
+        else
+            [[ ! -e "$HOME/Applications/测试 App.app" ]] || echo owner/tap/fixture
+        fi
         ;;
     *) exit 5 ;;
 esac
 ''')
         brew.chmod(0o755)
-        self.owner_mock.return_value = {str(path): (str(brew), 'owner/tap/fixture')}
+        # Exercise real ownership detection with Homebrew's non-TTY output.
+        self.owner_patch.stop()
         original_unpack = self.unpack
 
         def authorized_unpack(destination):
@@ -395,9 +435,11 @@ esac
                 'ensure_sudo_session() { return 0; }'))
 
         plan = self.plan(path)
-        with patch.object(apps, 'unpack_bundle', side_effect=authorized_unpack):
+        with patch.object(apps, '_brew_candidates', return_value=[str(brew)]), \
+             patch.object(apps, 'unpack_bundle', side_effect=authorized_unpack):
             plan.preview()
-        plan.apply(30)
+            self.assertEqual(plan.cask_identities, {(str(brew), 'owner/tap/fixture')})
+            plan.apply(30)
         self.assertFalse(path.exists(), self.output)
         self.assertEqual((self.home / 'cask-command').read_text().splitlines(),
                          ['uninstall', '--cask', 'owner/tap/fixture'])
