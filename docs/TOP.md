@@ -93,3 +93,9 @@
 颜色固定对应 CPU 绿、GPU 紫、内存琥珀、磁盘蓝、网络青，标题/曲线/数值一致；进程表只有 CPU≥20% 和 RSS≥512 MiB 的数值使用对应强调色，选中行继续使用统一选择背景，错误仍为独立告警颜色。颜色不改变排序或过滤。
 
 修复后以 `TERM=xterm-kitty` 真实 PTY、160×44、1 秒采样，测量 30 秒：RSS 24.09–24.38 MiB，CPU 平均占单核 0.70%，5 次按键反馈最大 0.85 ms。[本轮原始数据](top-refresh-performance.json)。这是短时性能证据，一小时验证仍未完成。
+
+### macOS CI 终端描述兼容
+
+提交 `c005436` 的 [macOS CI](https://github.com/tingfeng347/mactools/actions/runs/42438956988) 中，Intel/Python 3.9 通过，Apple Silicon/Python 3.13 的两个 kitty PTY 测试因 `setupterm: could not find terminal` 失败。原兼容分支只处理老版本 ncurses，新版在缺少 `xterm-kitty` 描述时仍会启动失败。
+
+现在新版 ncurses 先检查 kitty 描述能否加载，缺失时在当前 curses 会话使用 `xterm-256color`；描述可用时保留 kitty，退出时恢复原 `TERM`。回归测试用终端查找替身覆盖新版描述缺失、描述可用与普通 xterm 三种情形；真实 PTY 测试继续验证绘制与交互。

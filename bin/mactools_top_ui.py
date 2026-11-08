@@ -762,9 +762,16 @@ def run(sampler, view, args, page):
     # xterm profile retains 256 colors/input without that capability.
     original_term = os.environ.get('TERM')
     version = getattr(curses, 'ncurses_version', (0, 0, 0))
-    if original_term == 'xterm-kitty' and tuple(version[:2]) <= (6, 0):
-        os.environ['TERM'] = 'xterm-256color'
     try:
+        if original_term == 'xterm-kitty':
+            if tuple(version[:2]) <= (6, 0):
+                os.environ['TERM'] = 'xterm-256color'
+            else:
+                try:
+                    curses.setupterm(term=original_term)
+                except curses.error:
+                    # Newer curses builds may lack kitty's terminfo entry.
+                    os.environ['TERM'] = 'xterm-256color'
         return curses.wrapper(lambda window: Monitor(window, sampler, view, args, page).run())
     finally:
         if original_term is None:

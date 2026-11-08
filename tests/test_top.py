@@ -77,6 +77,31 @@ class ProcessFiltering(unittest.TestCase):
 
 
 class SamplingRules(unittest.TestCase):
+    def test_modern_curses_uses_available_terminal_and_restores_environment(self):
+        import curses
+        from mactools_top_ui import run
+
+        for term, kitty_available, expected in (
+                ('xterm-kitty', False, 'xterm-256color'),
+                ('xterm-kitty', True, 'xterm-kitty'),
+                ('xterm-256color', False, 'xterm-256color')):
+            with self.subTest(term=term, kitty_available=kitty_available):
+                def setupterm(*args, **kwargs):
+                    if kwargs.get('term', os.environ['TERM']) == 'xterm-kitty' and not kitty_available:
+                        raise curses.error('setupterm: could not find terminal')
+
+                def wrapper(callback):
+                    setupterm()  # Same terminal lookup as curses.initscr().
+                    self.assertEqual(os.environ['TERM'], expected)
+                    return {'page': 'processes'}
+
+                with patch.dict(os.environ, TERM=term), \
+                        patch('mactools_top_ui.curses.ncurses_version', (6, 5, 20240427)), \
+                        patch('mactools_top_ui.curses.setupterm', side_effect=setupterm), \
+                        patch('mactools_top_ui.curses.wrapper', side_effect=wrapper):
+                    self.assertEqual(run(None, None, None, 'processes'), {'page': 'processes'})
+                    self.assertEqual(os.environ['TERM'], term)
+
     def test_long_command_wrapping_does_not_retain_overlapping_suffixes(self):
         from mactools_top_ui import command_lines, fit
         command = 'x' * 200000
