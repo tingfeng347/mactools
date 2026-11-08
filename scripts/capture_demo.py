@@ -5,6 +5,7 @@ Use --capture to open each current selector in a private pseudo-terminal and
 exit without accepting a selection. --only help install remove optimize top
 refreshes README's five screenshots. No installations, removals, or cleanup
 actions are executed.
+Add --lang en to capture English interfaces as separate *-en.png assets.
 Without --capture, render existing .reference/*.typescript recordings.
 """
 
@@ -93,7 +94,7 @@ def render(screen, filename, command):
     image.save(OUTPUT / filename, optimize=True)
 
 
-def capture(arguments, seconds=8, rows=ROWS):
+def capture(arguments, seconds=8, rows=ROWS, language='zh'):
     # Terminal-only dependencies stay out of the recording renderer.
     import fcntl
     import pty
@@ -107,7 +108,7 @@ def capture(arguments, seconds=8, rows=ROWS):
     child, fd = pty.fork()
     if child == 0:
         fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack('HHHH', rows, COLS, 0, 0))
-        env = dict(os.environ, TERM='xterm-256color', MACTOOLS_LANG='zh', NO_COLOR='',
+        env = dict(os.environ, TERM='xterm-256color', MACTOOLS_LANG=language, NO_COLOR='',
                    XDG_CONFIG_HOME=settings.name)
         executable = str(ROOT / 'bin' / arguments[0])
         os.execve(executable, [executable, *arguments[1:]], env)
@@ -155,28 +156,39 @@ def capture(arguments, seconds=8, rows=ROWS):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--capture', action='store_true')
+    parser.add_argument('--lang', choices=['zh', 'en'], default='zh',
+                        help='Interface language; English images use an -en filename suffix')
     parser.add_argument('--only', nargs='+', choices=['help', *(demo[0] for demo in DEMOS)],
                         help='Refresh only the named screenshots, e.g. help install top')
     args = parser.parse_args()
     recordings = ROOT / '.reference'
+    if args.lang == 'en':
+        recordings /= 'en'
+
+    def image_name(filename):
+        path = Path(filename)
+        return path.stem + ('-en' if args.lang == 'en' else '') + path.suffix
+
     selected = set(args.only or ['help', *(demo[0] for demo in DEMOS)])
     if args.capture:
-        recordings.mkdir(exist_ok=True)
+        recordings.mkdir(parents=True, exist_ok=True)
         if 'help' in selected:
-            (recordings / 'help.typescript').write_bytes(capture(['ma', '--help'], seconds=1))
+            (recordings / 'help.typescript').write_bytes(capture(['ma', '--help'], seconds=1,
+                                                                language=args.lang))
         for name, filename, arguments, title in DEMOS:
             if name not in selected:
                 continue
             (recordings / (name + '.typescript')).write_bytes(capture(
-                arguments, seconds=12 if name == 'top' else 8, rows=44 if name == 'top' else ROWS))
+                arguments, seconds=12 if name == 'top' else 8, rows=44 if name == 'top' else ROWS,
+                language=args.lang))
             print('Captured ' + title, flush=True)
     if 'help' in selected:
-        render(recording(recordings / 'help.typescript'), 'commands-color.png', 'ma --help')
+        render(recording(recordings / 'help.typescript'), image_name('commands-color.png'), 'ma --help')
     for name, filename, arguments, title in DEMOS:
         if name not in selected:
             continue
         path = recordings / (name + '.typescript')
         if path.exists():
             render(recording(path, interactive=not args.capture and name != 'top',
-                             rows=44 if name == 'top' else ROWS), filename, title)
+                             rows=44 if name == 'top' else ROWS), image_name(filename), title)
     print('Saved terminal screenshots in docs/images/')

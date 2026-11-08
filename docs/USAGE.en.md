@@ -98,29 +98,29 @@ The uninstaller removes only mactools commands and modules. It preserves applica
 
 Search and select packages: white names, right-aligned versions, and green `✓` marks for installed packages. Blue types indicate official Homebrew sources; purple indicates third-party taps. Use `Tab` for multiple selections, `Ctrl+A` to select all matches, and `Ctrl+/` to toggle details.
 
-![maci searching for fish with installed versions and package details](images/install-status.png)
+![maci searching for fish with installed versions and package details](images/install-status-en.png)
 
 <details>
 <summary>More interfaces: app removal, disk cleanup, and system optimization</summary>
 
 **App removal with `macr`**: native apps appear first with yellow `app` labels. Press Enter to scan leftovers, then choose whether to clean them before confirming removal.
 
-![macr searching for Google Chrome with native app and removal details](images/remove-color.png)
+![macr searching for Google Chrome with native app and removal details](images/remove-color-en.png)
 
 **Disk cleanup with `macc`**: select Homebrew caches, unused dependencies, build output, and application caches; inspect the scope on the right.
 
-![macc cleanup selector showing action names, scopes, and details](images/clean-color.png)
+![macc cleanup selector showing action names, scopes, and details](images/clean-color-en.png)
 
 **System optimization with `maco`**: choose from 19 tasks for DNS, system caches, and services, then review permissions and effects.
 
-![maco optimization selector showing tasks and required permissions](images/optimize-color.png)
+![maco optimization selector showing tasks and required permissions](images/optimize-color-en.png)
 
 </details>
 
 <details>
 <summary>All commands and shortcuts</summary>
 
-![Colorful ma help showing features and shortcuts](images/commands-color.png)
+![Colorful ma help showing features and shortcuts](images/commands-color-en.png)
 
 </details>
 
@@ -350,7 +350,7 @@ maca remove --all --dry-run
 maca doctor --offline
 ```
 
-![AI client selector](images/ai-color.png)
+![AI client selector](images/ai-color-en.png)
 
 Supports Codex, Claude Code, OpenCode, Pi, Qoder CN, Gemini CLI, Qwen Code and official ZCode CLI. The selector matches `maci`, with a centered name heading, left-aligned names, aligned status/source columns and a details pane toggled with `Ctrl+/`.
 

@@ -34,23 +34,23 @@ mato                         # Monitor resources and manage processes
 
 **Command overview**
 
-![ma help including the mato live monitor](docs/images/commands-color.png)
+![ma help including the mato live monitor](docs/images/commands-color-en.png)
 
 **Search and install packages**
 
-![maci searching for fish with installed versions and package details](docs/images/install-status.png)
+![maci searching for fish with installed versions and package details](docs/images/install-status-en.png)
 
 **App removal and leftover cleanup**
 
-![macr searching for Google Chrome with native app and removal details](docs/images/remove-color.png)
+![macr searching for Google Chrome with native app and removal details](docs/images/remove-color-en.png)
 
 **System optimization**
 
-![maco optimization selector showing available tasks, scope, and required permissions](docs/images/optimize-color.png)
+![maco optimization selector showing available tasks, scope, and required permissions](docs/images/optimize-color-en.png)
 
 **Live resource and process monitoring**
 
-![mato showing CPU, GPU, memory, disk, network, and processes sorted by memory](docs/images/top-color.png)
+![mato showing CPU, GPU, memory, disk, network, and processes sorted by memory](docs/images/top-color-en.png)
 
 ## Install and uninstall
 
