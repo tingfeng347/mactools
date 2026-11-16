@@ -126,6 +126,51 @@ def app_alias_path():
     return cache_dir() / 'app-casks.json'
 
 
+def app_name_key(value):
+    """Normalize a bundle name so a cask build matches its store counterpart."""
+    key = ''.join(char for char in str(value).casefold() if char.isalnum())
+    for suffix in ('macos', 'mac', 'osx', 'desktop'):
+        if key.endswith(suffix) and len(key) - len(suffix) >= 4:
+            return key[:-len(suffix)]
+    return key
+
+
+def store_duplicate_casks(queries, casks, timeout):
+    """Map selected cask names to the App Store app that already provides them.
+
+    A store build and a Homebrew cask can carry different bundle identifiers
+    and different bundle names, so the artifact name is normalized instead of
+    trusting a single identifier. Anything unproven stays installable.
+    """
+    from mactools_apps import installed_apps
+    if not casks:
+        return {}
+    try:
+        store = {}
+        for app in installed_apps(timeout):
+            if app.store:
+                store.setdefault(app_name_key(app.name), app.name)
+    except (OSError, ValueError):
+        return {}
+    if not store:
+        return {}
+    duplicates = {}
+    for row in casks:
+        try:
+            data = json.loads(queries.capture('info', '--json=v2', '--cask',
+                                              package_name(row.name)))
+            items = inventory_items(data, 'casks')
+        except (BrewError, ValueError, TypeError):
+            continue
+        for item in items:
+            for path in cask_app_paths(item):
+                match = store.get(app_name_key(Path(path).stem))
+                if match:
+                    duplicates[row.name] = match
+                    break
+    return duplicates
+
+
 def app_alias_map():
     """Read cached cask tokens keyed by the exact installed app bundle path.
 
@@ -1072,9 +1117,32 @@ def cask_identity(brew, token):
     return (os.path.realpath(brew), token[len(prefix):] if token.startswith(prefix) else token)
 
 
+def announce_admin(apps):
+    """Name the apps whose removal needs an administrator password."""
+    from mactools_apps import App, needs_admin
+    admin = [app for app in apps
+             if isinstance(app, App) and (app.store or needs_admin(app))]
+    if not admin:
+        return
+    for app in admin:
+        reason = text('App Store 安装', 'App Store install') if app.store else text('归 root 所有', 'owned by root')
+        print(text(f'注意：{app.name} 需要管理员授权才能删除（{reason}）。',
+                   f'Note: {app.name} needs administrator authorization to remove ({reason}).'),
+              file=sys.stderr)
+    if not os.isatty(0) and os.geteuid() != 0:
+        print(text('当前不是交互终端，sudo 无法提示密码；请改用 sudo 运行，或在启动台/Finder 中删除。',
+                   'Not an interactive terminal, so sudo cannot prompt for a password; '
+                   'run with sudo or delete from Launchpad/Finder instead.'), file=sys.stderr)
+    else:
+        print(text('执行时会请求 sudo 密码；不想提权可在启动台或 Finder 中删除。',
+                   'Apply will ask for the sudo password; delete from Launchpad or Finder '
+                   'instead if you prefer not to escalate.'), file=sys.stderr)
+
+
 def execute_selection(brew, queries, opts, selected):
     native = [row for row in selected if row.source == 'app']
     app_plan = None
+    skipped = {}
     mutated = False
     patched = False
     try:
@@ -1084,11 +1152,25 @@ def execute_selection(brew, queries, opts, selected):
             app_plan = AppUninstallPlan(apps, opts.timeout, with_data=opts.app_data,
                                        scan_timeout=opts.scan_timeout)
             app_plan.preview()
+            announce_admin(apps)
         # Mole's app uninstaller removes the cask registration itself. If both
         # views of one app were selected, run that uninstall just once.
         handled = {cask_identity(owner, token) for owner, token in app_plan.cask_identities} if app_plan else set()
         remaining = [row for row in selected if row.source != 'app' and not
                      (row.source == 'cask' and cask_identity(brew, row.name) in handled)]
+        if opts.action == 'install':
+            # A store build and its cask are separate bundles with separate
+            # identifiers; installing both leaves two copies of one app.
+            skipped = store_duplicate_casks(queries, [row for row in remaining
+                                                      if row.source == 'cask'], opts.timeout)
+            if skipped:
+                remaining = [row for row in remaining if row.name not in skipped]
+                for name, store_name in sorted(skipped.items()):
+                    print(text(f'跳过 {name}：{store_name} 已通过 App Store 安装，不重复安装。',
+                               f'Skipping {name}: {store_name} is already installed from '
+                               f'the App Store, so it will not be installed twice.'),
+                          file=sys.stderr)
+        shown = [row for row in selected if row.name not in skipped]
         commands = plan(brew, opts.action, remaining)
         if not commands and app_plan is None:
             return 0
@@ -1108,7 +1190,7 @@ def execute_selection(brew, queries, opts, selected):
                 clean_leftovers = confirm(text('是否同时清理预览中的残留？',
                                                'Also clean the previewed leftovers?'), False)
         print(text('执行计划：', 'Plan:'))
-        for row in selected:
+        for row in shown:
             print('\t'.join((row.source, row.display_name or row.name, row.current, row.target)))
         if app_plan:
             if clean_leftovers is None:
@@ -1148,7 +1230,7 @@ def execute_selection(brew, queries, opts, selected):
             # select() closes its query owner; patching needs a live one for the
             # single local "brew list --versions" call.
             patch_queries = Queries(brew, opts.timeout)
-            patch_selector_cache(patch_queries, opts.action, selected, removed_casks)
+            patch_selector_cache(patch_queries, opts.action, shown, removed_casks)
             patched = True
         except (BrewError, OSError, ValueError, TypeError, KeyError):
             pass

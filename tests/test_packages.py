@@ -335,6 +335,47 @@ class PackageTests(unittest.TestCase):
                 self.assertEqual(self.invoke(action, '--dry-run', '--yes')[0], 0)
                 self.assertTrue(snapshot.exists())
 
+    def test_store_name_key_ignores_packaging_suffixes(self):
+        for left, right in (('BaiduNetdisk', 'BaiduNetdisk_mac'),
+                            ('WeChat', 'WeChat Desktop'),
+                            ('TencentMeeting', 'TencentMeeting OSX')):
+            with self.subTest(pair=(left, right)):
+                self.assertEqual(packages.app_name_key(left), packages.app_name_key(right))
+        # Distinct apps must stay distinct even when one name is a prefix.
+        self.assertNotEqual(packages.app_name_key('QQ'), packages.app_name_key('QQMusic'))
+
+    def test_store_app_blocks_a_cask_with_a_different_bundle_name(self):
+        app = Mock(store=True)
+        app.name = 'BaiduNetdisk'
+        rows = [packages.Row('cask', 'baidunetdisk', '-', '8.10.3')]
+        queries = packages.Queries(str(self.brew), 15)
+        payload = {'casks': [{'token': 'baidunetdisk',
+                              'artifacts': [{'app': ['BaiduNetdisk_mac.app'],
+                                             'target': '/Applications/BaiduNetdisk_mac.app'}]}]}
+        with patch('mactools_apps.installed_apps', return_value=[app]), \
+             patch.object(queries, 'capture', return_value=json.dumps(payload)):
+            self.assertEqual(packages.store_duplicate_casks(queries, rows, 15),
+                             {'baidunetdisk': 'BaiduNetdisk'})
+
+    def test_install_skips_a_cask_the_app_store_already_provides(self):
+        opts = packages.parser().parse_args(['install', '--dry-run'])
+        opts.include_apps, opts.sources = False, ['cask']
+        queries = packages.Queries(str(self.brew), 15)
+        row = packages.Row('cask', 'baidunetdisk', '-', '8.10.3')
+        payload = {'casks': [{'token': 'baidunetdisk',
+                              'artifacts': [{'app': ['BaiduNetdisk_mac.app'],
+                                             'target': '/Applications/BaiduNetdisk_mac.app'}]}]}
+        app = Mock(store=True)
+        app.name = 'BaiduNetdisk'
+        out, err = io.StringIO(), io.StringIO()
+        with patch('mactools_apps.installed_apps', return_value=[app]), \
+             patch.object(queries, 'capture', return_value=json.dumps(payload)), \
+             contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = packages.execute_selection(str(self.brew), queries, opts, [row])
+        self.assertEqual(code, 0)
+        self.assertIn('Skipping baidunetdisk', err.getvalue())
+        self.assertEqual(self.mutations(), [])
+
     def test_cask_dedup_requires_same_homebrew_and_tap(self):
         self.assertEqual(packages.cask_identity(str(self.brew), 'firefox'),
                          packages.cask_identity(str(self.brew), 'homebrew/cask/firefox'))

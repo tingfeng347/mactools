@@ -49,6 +49,26 @@ class App:
     path: str
     bundle_id: str
     cask_name: str = ''
+    store: bool = False
+
+
+def _store_installed(location):
+    """App Store builds ship Contents/_MASReceipt/receipt; that is the proof."""
+    receipt = location / 'Contents/_MASReceipt'
+    try:
+        if (receipt / 'receipt').is_file():
+            return True
+        return receipt.is_dir() and any(True for _ in receipt.iterdir())
+    except OSError:
+        return False
+
+
+def needs_admin(app):
+    """Removing a bundle owned by root needs an administrator password."""
+    try:
+        return os.stat(app.path).st_uid == 0
+    except OSError:
+        return False
 
 
 def _app(path, bundle_id='', name=''):
@@ -72,7 +92,7 @@ def _app(path, bundle_id='', name=''):
     bundle_id = metadata.get('CFBundleIdentifier') or bundle_id or 'unknown'
     return App('app-' + hashlib.sha256(os.fsencode(absolute)).hexdigest(),
                _safe_text(name or location.stem), _safe_text(version), absolute,
-               _safe_text(bundle_id))
+               _safe_text(bundle_id), store=_store_installed(location))
 
 
 def installed_apps(timeout=15):
@@ -335,5 +355,9 @@ def preview_detail(app_id, timeout=15):
     print(text('已安装：', 'Installed: ') + (app.version or '—'), flush=True)
     print(text('位置：', 'Path: ') + app.path, flush=True)
     print('Bundle ID: ' + app.bundle_id, flush=True)
+    print(text('来源：', 'Source: ') + (text('App Store', 'App Store') if app.store
+                                     else text('其他渠道', 'Other')), flush=True)
+    if needs_admin(app):
+        print(text('卸载需要管理员授权（sudo）。', 'Removal requires administrator authorization (sudo).'), flush=True)
     print('\n' + text('按 Enter 后扫描应用及残留，确认前显示完整计划。',
                        'Press Enter to scan the app and leftovers, then review the full plan before confirming.'), flush=True)

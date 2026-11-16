@@ -513,5 +513,42 @@ class CaskOwnership(unittest.TestCase):
             self.assertEqual(apps._cask_owners([self.app()], 10), {})
 
 
+class StoreOrigin(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix='ma-app-store-')
+        self.addCleanup(self.temporary.cleanup)
+        self.home = Path(self.temporary.name).resolve()
+
+    def app(self, name='Store App'):
+        path = self.home / 'Applications' / (name + '.app')
+        (path / 'Contents').mkdir(parents=True)
+        with (path / 'Contents/Info.plist').open('wb') as stream:
+            plistlib.dump({'CFBundleIdentifier': 'net.mactools.' + name, 'CFBundleShortVersionString': '2.0'}, stream)
+        return path
+
+    def test_mas_receipt_marks_the_store_build(self):
+        path = self.app()
+        self.assertFalse(apps._app(str(path)).store)
+        (path / 'Contents/_MASReceipt').mkdir()
+        (path / 'Contents/_MASReceipt/receipt').write_bytes(b'receipt')
+        self.assertTrue(apps._app(str(path)).store)
+
+    def test_missing_receipt_is_not_a_store_build(self):
+        path = self.app()
+        (path / 'Contents/_MASReceipt').mkdir()
+        # An empty marker proves nothing; the receipt file is the signal.
+        self.assertFalse(apps._app(str(path)).store)
+
+    def test_admin_requirement_follows_bundle_ownership(self):
+        app = apps._app(str(self.app()))
+        with patch.object(apps.os, 'stat') as stat:
+            stat.return_value.st_uid = 0
+            self.assertTrue(apps.needs_admin(app))
+            stat.return_value.st_uid = os.getuid()
+            self.assertFalse(apps.needs_admin(app))
+            stat.side_effect = OSError
+            self.assertFalse(apps.needs_admin(app))
+
+
 if __name__ == '__main__':
     unittest.main()
